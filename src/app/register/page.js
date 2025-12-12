@@ -15,7 +15,8 @@ export default function Register() {
     name: '',
     email: '',
     password: ''
-  })
+  });
+  
   const [showPassword, setShowPassword] = useState(false)
   const [agree, setAgree] = useState(false)
   const [localError, setLocalError] = useState(null)

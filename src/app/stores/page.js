@@ -23,7 +23,7 @@ export default function StoresPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-5xl mx-auto">
+      <div className="container mx-auto">
         <h2 className="text-xl font-semibold mb-4">Stores</h2>
         {loading ? <div>Loading...</div> : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

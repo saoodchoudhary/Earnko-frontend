@@ -14,7 +14,7 @@ export default function TrustedBrands() {
 
   return (
     <section className="py-16 bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
           <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3">
             Trusted by Industry Leaders

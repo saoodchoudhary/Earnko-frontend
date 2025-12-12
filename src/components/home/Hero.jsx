@@ -19,7 +19,7 @@ export default function Hero() {
       <div className="absolute top-1/3 -right-20 w-80 h-80 bg-purple-100/30 rounded-full mix-blend-multiply filter blur-3xl" />
       <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-green-100/20 rounded-full mix-blend-multiply filter blur-3xl" />
       
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           {/* Left Content */}
           <div className="space-y-8">

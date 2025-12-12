@@ -10,7 +10,7 @@ import { Link2, Zap, TrendingUp, HelpCircle, Copy, ExternalLink } from 'lucide-r
 export default function AffiliatePage() {
   return (
     <DashboardLayout>
-      <div className="max-w-7xl mx-auto py-8 px-4">
+      <div className="container mx-auto py-8 px-4">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">

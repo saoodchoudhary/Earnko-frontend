@@ -33,7 +33,7 @@ export default function Testimonials() {
 
   return (
     <section className="py-20 lg:py-32 bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center space-y-4 mb-16">
           <h2 className="text-4xl lg:text-5xl font-bold text-gray-900">Trusted by Industry Leaders</h2>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">See how top creators are growing their earnings with Earnko</p>
