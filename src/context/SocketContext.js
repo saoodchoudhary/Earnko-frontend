@@ -21,7 +21,7 @@ export const SocketProvider = ({ children }) => {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      const newSocket = io(process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000', {
+      const newSocket = io(process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080', {
         auth: { token: localStorage.getItem('token') }
       })
 

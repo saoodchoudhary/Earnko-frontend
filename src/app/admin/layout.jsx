@@ -28,11 +28,12 @@ export default function AdminLayout({ children }) {
           }
           return
         }
-
+ 
         const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/auth/me`, {
           headers: { Authorization: `Bearer ${token}` }
         })
 
+        console.log("res", res.statusText)
         if (!res.ok) {
           // invalid token or server error -> redirect to login
           localStorage.removeItem('token')
@@ -40,6 +41,7 @@ export default function AdminLayout({ children }) {
           if (mounted) {
             setAuthorized(false)
             setLoading(false)
+            console.log("here logoin", mounted)
             router.push('/login')
           }
           return

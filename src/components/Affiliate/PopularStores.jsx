@@ -57,7 +57,7 @@ export default function PopularStores() {
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
       
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/affiliate/link-from-url`,
+        `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'}/api/affiliate/link-from-url`,
         {
           method: 'POST',
           headers: { 

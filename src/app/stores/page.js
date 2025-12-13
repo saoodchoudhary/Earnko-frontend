@@ -11,7 +11,7 @@ export default function StoresPage() {
     async function load() {
       setLoading(true)
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/stores`)
+        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'}/api/stores`)
         const data = await res.json()
         if (res.ok) setStores(data.data.stores || data.data || [])
       } catch (err) {

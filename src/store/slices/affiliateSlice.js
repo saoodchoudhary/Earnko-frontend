@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import axios from 'axios'
-const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'
+const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'
 
 export const getAffiliateStats = createAsyncThunk('affiliate/stats', async (_, { rejectWithValue }) => {
   try {

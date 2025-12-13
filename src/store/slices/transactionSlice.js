@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import axios from 'axios'
-const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'
+const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'
 
 export const fetchTransactions = createAsyncThunk('transactions/fetch', async ({ page = 1, limit = 10, status = '' }, { rejectWithValue }) => {
   try {

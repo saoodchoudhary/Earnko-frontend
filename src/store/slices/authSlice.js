@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import axios from 'axios'
 
-const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'
+const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'
 
 export const loginUser = createAsyncThunk('auth/login', async ({ email, password }, { rejectWithValue }) => {
   try {
@@ -26,6 +26,7 @@ export const getCurrentUser = createAsyncThunk('auth/currentUser', async (_, { r
     const token = localStorage.getItem('token')
     if (!token) throw new Error('No token')
     const response = await axios.get(`${API_URL}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+  console.log("token", response.data)
     return response.data
   } catch (error) {
     return rejectWithValue(error.response?.data?.message || 'Failed to get user')

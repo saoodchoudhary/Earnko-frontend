@@ -49,7 +49,7 @@ export default function WithdrawPage() {
     setFetching(true)
     try {
       const token = localStorage.getItem('token')
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/withdrawals`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'}/api/withdrawals`, {
         headers: { Authorization: token ? `Bearer ${token}` : '' }
       })
       const data = await res.json()
@@ -126,7 +126,7 @@ export default function WithdrawPage() {
         localStorage.setItem('saved_bank_details', JSON.stringify({ accountNumber, ifscCode, accountName }))
       }
       
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/withdrawals`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'}/api/withdrawals`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json', 

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link2, Copy, ExternalLink, Sparkles, Globe } from 'lucide-react'
 
-const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'
+const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'
 
 export default function LinkMaker() {
   const [inputUrl, setInputUrl] = useState('')

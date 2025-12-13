@@ -52,7 +52,7 @@ export default function Login() {
     const res = await dispatch(loginUser(formData))
     if (res.type === 'auth/login/fulfilled') {
       // Optionally refresh user profile
-      try { await dispatch(getCurrentUser()) } catch (err) { /* ignore */ }
+      // try { await dispatch(getCurrentUser()) } catch (err) { /* ignore */ }
       router.push('/dashboard')
     } else {
       setLocalError(res.payload || 'Login failed')

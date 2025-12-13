@@ -18,7 +18,7 @@ export default function TransactionDetail() {
       setLoading(true)
       try {
         const token = localStorage.getItem('token')
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/transactions/${id}`, {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'}/api/transactions/${id}`, {
           headers: { Authorization: token ? `Bearer ${token}` : '' }
         })
         const data = await res.json()
