@@ -1,48 +1,60 @@
-'use client'
-import { useEffect, useState } from 'react'
-import Link from 'next/link'
-import DashboardLayout from '@/components/Layout/DashboardLayout'
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
+import { fetchStores } from '../../store/slices/storesSlice';
+import StoreCard from '../../components/StoreCard';
+import { fetchOffers } from '../../store/slices/offersSlice';
+import OfferCard from '../../components/OfferCard';
 
 export default function StoresPage() {
-  const [stores, setStores] = useState([])
-  const [loading, setLoading] = useState(false)
+  const dispatch = useAppDispatch();
+  const { items: stores, loading: storesLoading } = useAppSelector(s => s.stores);
+  const { items: offers, loading: offersLoading } = useAppSelector(s => s.offers);
+  const [selectedStore, setSelectedStore] = useState('all');
 
   useEffect(() => {
-    async function load() {
-      setLoading(true)
-      try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'}/api/stores`)
-        const data = await res.json()
-        if (res.ok) setStores(data.data.stores || data.data || [])
-      } catch (err) {
-        console.error(err)
-      } finally { setLoading(false) }
-    }
-    load()
-  }, [])
+    dispatch(fetchStores());
+    dispatch(fetchOffers());
+  }, [dispatch]);
+
+  const filteredOffers = selectedStore === 'all'
+    ? offers
+    : offers.filter(o => o.store?._id === selectedStore);
 
   return (
-    <DashboardLayout>
-      <div className="container mx-auto">
-        <h2 className="text-xl font-semibold mb-4">Stores</h2>
-        {loading ? <div>Loading...</div> : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {stores.map(s => (
-              <div key={s._id} className="bg-white rounded-lg p-4 shadow">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">{s.name}</div>
-                    <div className="text-xs text-gray-500">Commission: {s.commissionRate}{s.commissionType === 'percentage' ? '%' : ' (fixed)'}</div>
-                  </div>
-                  <div>
-                    <Link href={`/stores/${s._id}`} className="text-primary-600 text-sm">View</Link>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+    <main className="min-h-screen px-4 py-6 max-w-6xl mx-auto">
+      <h1 className="text-2xl font-semibold mb-4">Stores & Offers</h1>
+
+      <div className="flex gap-2 overflow-auto mb-6 no-scrollbar">
+        <button
+          className={`chip ${selectedStore === 'all' ? 'chip-active' : ''}`}
+          onClick={() => setSelectedStore('all')}
+        >
+          All
+        </button>
+        {storesLoading ? (
+          Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton h-8 w-24 rounded-full" />)
+        ) : (
+          stores.map(s => (
+            <button
+              key={s._id}
+              className={`chip ${selectedStore === s._id ? 'chip-active' : ''}`}
+              onClick={() => setSelectedStore(s._id)}
+            >
+              {s.name}
+            </button>
+          ))
         )}
       </div>
-    </DashboardLayout>
-  )
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {offersLoading ? (
+          Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton h-32 rounded-lg" />)
+        ) : (
+          filteredOffers.map(o => <OfferCard key={o._id} offer={o} />)
+        )}
+      </div>
+    </main>
+  );
 }

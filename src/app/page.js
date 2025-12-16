@@ -1,42 +1,49 @@
-// app/page.tsx
-export const metadata = {
-  title: 'Earnko — Turn Links Into Earnings | Affiliate & Cashback Platform',
-  description: 'Create affiliate links, share them, and earn commissions. Trusted by creators and brands — reliable tracking, automated commissions and fast payouts.',
-  openGraph: {
-    title: 'Earnko — Turn Links Into Earnings',
-    description: 'Create affiliate links, share them, and earn commissions. Trusted by creators and brands — reliable tracking, automated commissions and fast payouts.',
-    url: 'https://yourdomain.com',
-    siteName: 'Earnko',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Earnko — Turn Links Into Earnings',
-    description: 'Create affiliate links, share them, and earn commissions.',
-  }
-}
+'use client';
 
-import Hero from '@/components/home/Hero'
-import Features from '@/components/home/Features'
-import HowItWorks from '@/components/home/HowItWorks'
-import DashboardPreview from '@/components/home/DashboardPreview'
-import Testimonials from '@/components/home/Testimonials'
-import TrustedBrands from '@/components/home/TrustedBrands'
-import Navbar from '@/components/Layout/Navbar'
-import Footer from '@/components/Layout/Footer'
+import Link from 'next/link';
+import { useEffect } from 'react';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { fetchStores } from '../store/slices/storesSlice';
+import StoreCard from '../components/StoreCard';
 
-export default function Page() {
+export default function Home() {
+  const dispatch = useAppDispatch();
+  const { items, loading } = useAppSelector(s => s.stores);
+
+  useEffect(() => {
+    dispatch(fetchStores());
+  }, [dispatch]);
+
   return (
-    <>
-      <Navbar />
-      <main className="pt-16">
-        <Hero />
-        <TrustedBrands />
-        <Features />
-        <HowItWorks />
-        <DashboardPreview />
-        <Testimonials />
-      </main>
-      <Footer />
-    </>
-  )
+    <main className="min-h-screen px-4 py-6 max-w-6xl mx-auto">
+      <section className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-semibold">Trending Stores</h1>
+        <div className="flex gap-3">
+          <Link href="/login" className="btn btn-outline">Login</Link>
+          <Link href="/register" className="btn btn-primary">Register</Link>
+        </div>
+      </section>
+
+      {loading ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="skeleton h-40 rounded-lg" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {items.map(store => (
+            <StoreCard key={store._id} store={store} />
+          ))}
+        </div>
+      )}
+
+      <section className="mt-10">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Explore Offers</h2>
+          <Link href="/stores" className="text-primary hover:underline">View all</Link>
+        </div>
+      </section>
+    </main>
+  );
 }
