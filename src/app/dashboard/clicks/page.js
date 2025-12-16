@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-export default function UserTransactionsPage() {
+export default function MyClicksPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -12,13 +12,13 @@ export default function UserTransactionsPage() {
       try {
         setLoading(true);
         const token = localStorage.getItem('token');
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/conversions/me`, {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/user/clicks`, {
           signal: controller.signal,
           headers: { Authorization: token ? `Bearer ${token}` : '' }
         });
         const data = await res.json();
-        if (res.ok) setItems(data?.data?.conversions || []);
-      } catch { /* ignore */ } finally { setLoading(false); }
+        if (res.ok) setItems(data?.data?.items || []);
+      } catch {} finally { setLoading(false); }
     }
     load();
     return () => controller.abort();
@@ -26,32 +26,30 @@ export default function UserTransactionsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">My Transactions</h1>
+      <h1 className="text-xl font-semibold">My Clicks</h1>
       <div className="bg-white border rounded-lg overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50">
             <tr>
-              <Th>Order ID</Th>
+              <Th>Slug</Th>
               <Th>Store</Th>
-              <Th className="text-right">Amount</Th>
-              <Th className="text-right">Commission</Th>
-              <Th>Status</Th>
+              <Th>IP</Th>
+              <Th>User Agent</Th>
               <Th>Date</Th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="p-4"><div className="h-10 skeleton rounded" /></td></tr>
+              <tr><td colSpan={5} className="p-4"><div className="h-10 skeleton rounded" /></td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={6} className="p-6 text-center text-gray-500">No transactions</td></tr>
-            ) : items.map(tx => (
-              <tr key={tx._id} className="border-t">
-                <Td>{tx.orderId || '-'}</Td>
-                <Td>{tx.store?.name || '-'}</Td>
-                <Td className="text-right">₹{Number(tx.productAmount || 0).toFixed(0)}</Td>
-                <Td className="text-right">₹{Number(tx.commissionAmount || 0).toFixed(0)}</Td>
-                <Td className="capitalize">{tx.status || '-'}</Td>
-                <Td>{tx.createdAt ? new Date(tx.createdAt).toLocaleString() : '-'}</Td>
+              <tr><td colSpan={5} className="p-6 text-center text-gray-500">No clicks</td></tr>
+            ) : items.map(c => (
+              <tr key={c._id} className="border-t">
+                <Td>{c.customSlug || '-'}</Td>
+                <Td>{c.store?.name || '-'}</Td>
+                <Td>{c.ipAddress || c.ip || '-'}</Td>
+                <Td className="max-w-[300px] truncate" title={c.userAgent || ''}>{c.userAgent || '-'}</Td>
+                <Td>{c.createdAt ? new Date(c.createdAt).toLocaleString() : '-'}</Td>
               </tr>
             ))}
           </tbody>

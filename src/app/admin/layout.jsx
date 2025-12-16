@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useSelector, useDispatch } from 'react-redux'
 import { logout } from '@/store/slices/authSlice'
-import { Grid, ClipboardList, DollarSign, CreditCard, Users, LogOut, Store as StoreIcon, Tag } from 'lucide-react'
+import { Grid, ClipboardList, DollarSign, CreditCard, Users, LogOut, Store as StoreIcon, Tag, MousePointer, Webhook, Settings as SettingsIcon } from 'lucide-react'
 
 export default function AdminLayout({ children }) {
   const dispatch = useDispatch()
@@ -17,35 +17,23 @@ export default function AdminLayout({ children }) {
     async function verify() {
       try {
         const token = localStorage.getItem('token')
-        if (!token) {
-          if (mounted) { setAuthorized(false); setLoading(false); router.push('/login') }
-          return
-        }
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+        if (!token) { if (mounted) { setAuthorized(false); setLoading(false); router.push('/login') } return }
+        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
         if (!res.ok) {
-          localStorage.removeItem('token')
-          localStorage.removeItem('user')
+          localStorage.removeItem('token'); localStorage.removeItem('user')
           if (mounted) { setAuthorized(false); setLoading(false); router.push('/login') }
           return
         }
         const data = await res.json()
         const user = data?.data?.user || data?.data || null
         if (!user || user.role !== 'admin') {
-          localStorage.removeItem('token')
-          localStorage.removeItem('user')
+          localStorage.removeItem('token'); localStorage.removeItem('user')
           if (mounted) { setAuthorized(false); setLoading(false); router.push('/login') }
           return
         }
-        if (mounted) {
-          localStorage.setItem('user', JSON.stringify(user))
-          setAuthorized(true)
-          setLoading(false)
-        }
-      } catch (err) {
-        localStorage.removeItem('token')
-        localStorage.removeItem('user')
+        if (mounted) { localStorage.setItem('user', JSON.stringify(user)); setAuthorized(true); setLoading(false) }
+      } catch {
+        localStorage.removeItem('token'); localStorage.removeItem('user')
         if (mounted) { setAuthorized(false); setLoading(false); router.push('/login') }
       }
     }
@@ -53,10 +41,7 @@ export default function AdminLayout({ children }) {
     return () => { mounted = false }
   }, [router, dispatch])
 
-  const handleLogout = () => {
-    dispatch(logout())
-    router.push('/login')
-  }
+  const handleLogout = () => { dispatch(logout()); router.push('/login') }
 
   if (loading) {
     return (
@@ -80,27 +65,16 @@ export default function AdminLayout({ children }) {
           </div>
 
           <nav className="space-y-2">
-            <Link href="/admin" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50">
-              <Grid className="w-4 h-4" /> Dashboard
-            </Link>
-            <Link href="/admin/transactions" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50">
-              <ClipboardList className="w-4 h-4" /> Transactions
-            </Link>
-            <Link href="/admin/commissions" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50">
-              <DollarSign className="w-4 h-4" /> Commissions
-            </Link>
-            <Link href="/admin/payouts" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50">
-              <CreditCard className="w-4 h-4" /> Payouts
-            </Link>
-            <Link href="/admin/users" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50">
-              <Users className="w-4 h-4" /> Users
-            </Link>
-            <Link href="/admin/stores" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50">
-              <StoreIcon className="w-4 h-4" /> Stores
-            </Link>
-            <Link href="/admin/offers" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50">
-              <Tag className="w-4 h-4" /> Offers
-            </Link>
+            <Link href="/admin" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><Grid className="w-4 h-4" /> Dashboard</Link>
+            <Link href="/admin/transactions" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><ClipboardList className="w-4 h-4" /> Transactions</Link>
+            <Link href="/admin/commissions" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><DollarSign className="w-4 h-4" /> Commissions</Link>
+            <Link href="/admin/payouts" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><CreditCard className="w-4 h-4" /> Payouts</Link>
+            <Link href="/admin/users" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><Users className="w-4 h-4" /> Users</Link>
+            <Link href="/admin/stores" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><StoreIcon className="w-4 h-4" /> Stores</Link>
+            <Link href="/admin/offers" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><Tag className="w-4 h-4" /> Offers</Link>
+            <Link href="/admin/clicks" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><MousePointer className="w-4 h-4" /> Clicks</Link>
+            <Link href="/admin/webhooks" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><Webhook className="w-4 h-4" /> Webhooks</Link>
+            <Link href="/admin/settings" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><SettingsIcon className="w-4 h-4" /> Settings</Link>
           </nav>
 
           <div className="mt-6">

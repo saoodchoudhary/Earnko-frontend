@@ -1,15 +1,23 @@
-// components/Layout/DashboardLayout.tsx (Enhanced version)
+// components/Layout/DashboardLayout.jsx (Safe redux usage + improved UX)
 'use client'
+
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useSelector, useDispatch } from 'react-redux'
 import { logout } from '@/store/slices/authSlice'
 import {
-  Grid, Link as LinkIcon, ShoppingBag, Clock, Wallet, Users, 
-  CreditCard, Settings, LogOut, Menu, X, User, TrendingUp,
-  BarChart3, Bell, Search, HelpCircle, Home
+  Grid, Link as LinkIcon, ShoppingBag, Wallet, Users,
+  CreditCard, Settings as SettingsIcon, LogOut, Menu, X, User,
+  TrendingUp, BarChart3, Bell, Search
 } from 'lucide-react'
+
+/**
+ * WHY THIS CHANGE:
+ * - You got: "Cannot destructure property 'user' ... useSelector(...)" which means state.auth is undefined.
+ * - We now read auth state safely with optional chaining and provide fallbacks.
+ * - This component will work whether you have auth slice wired or not.
+ */
 
 const navItems = [
   { key: 'dashboard', label: 'Dashboard', href: '/dashboard', icon: Grid },
@@ -19,29 +27,64 @@ const navItems = [
   { key: 'analytics', label: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
   { key: 'stores', label: 'Stores', href: '/stores', icon: CreditCard },
   { key: 'refer', label: 'Refer & Earn', href: '/dashboard/refer', icon: Users },
-  { key: 'settings', label: 'Settings', href: '/dashboard/settings', icon: Settings }
+  { key: 'settings', label: 'Settings', href: '/dashboard/settings', icon: SettingsIcon }
 ]
 
 export default function DashboardLayout({ children }) {
-  const { user } = useSelector((state) => state.auth)
+  // SAFE: do not destructure from possibly undefined slice
+  const authState = useSelector((state) => state?.auth) || {}
+  const user = authState.user || null
+
   const dispatch = useDispatch()
   const pathname = usePathname()
   const router = useRouter()
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
-  const [notifications] = useState(3) // Mock notification count
+  const [notifications] = useState(0)
 
-  useEffect(() => {
-    setIsMounted(true)
-  }, [])
+  useEffect(() => { setIsMounted(true) }, [])
+  useEffect(() => { setSidebarOpen(false) }, [pathname])
 
+  // If redux authState is not available, try token-based fallback for showing name/email
+  const [fallbackUser, setFallbackUser] = useState(null)
   useEffect(() => {
-    setSidebarOpen(false)
-  }, [pathname])
+    let active = true
+    async function loadMe() {
+      try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+        if (!token) return
+        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        const me = data?.data?.user || data?.data || null
+        if (active) setFallbackUser(me)
+      } catch {}
+    }
+    // Only fetch if user from redux is missing
+    if (!user) loadMe()
+    return () => { active = false }
+  }, [user])
+
+  const displayUser = user || fallbackUser
+  const initials = (() => {
+    const name = displayUser?.name || ''
+    if (!name) return 'U'
+    return name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
+  })()
 
   const handleLogout = () => {
-    dispatch(logout())
+    // Clear both redux and token fallback
+    try {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+    } catch {}
+    // If authSlice exists, dispatch; otherwise just navigate
+    if (typeof dispatch === 'function') {
+      try { dispatch(logout()) } catch {}
+    }
     router.push('/login')
   }
 
@@ -55,21 +98,13 @@ export default function DashboardLayout({ children }) {
       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
   }
 
-  const initials = (() => {
-    if (!user?.name) return 'U'
-    return user.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
-  })()
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Mobile Header */}
       <header className="lg:hidden bg-white border-b shadow-sm">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="p-2 rounded-lg hover:bg-gray-100"
-            >
+            <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-gray-100">
               <Menu className="w-5 h-5 text-gray-700" />
             </button>
             <Link href="/" className="flex items-center space-x-2">
@@ -121,27 +156,19 @@ export default function DashboardLayout({ children }) {
                     >
                       <Icon className="w-5 h-5" />
                       <span>{item.label}</span>
-                      {item.key === 'transactions' && (
-                        <span className="ml-auto bg-gray-900 text-white text-xs px-2 py-0.5 rounded-full">
-                          {5} {/* Mock count */}
-                        </span>
-                      )}
                     </Link>
                   </li>
                 )
               })}
             </ul>
 
-            {/* Quick Stats */}
+            {/* Quick Stats (fallback static, can wire to wallet) */}
             <div className="mt-8 px-4">
               <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl p-4 text-white">
                 <div className="text-sm font-medium">Available Balance</div>
-                <div className="text-xl font-bold mt-1">₹12,450</div>
+                <div className="text-xl font-bold mt-1">₹—</div>
                 <div className="text-xs text-gray-300 mt-1">Ready to withdraw</div>
-                <Link
-                  href="/dashboard/withdraw"
-                  className="mt-3 inline-flex items-center gap-1 text-sm font-medium hover:text-gray-200"
-                >
+                <Link href="/dashboard/withdraw" className="mt-3 inline-flex items-center gap-1 text-sm font-medium hover:text-gray-200">
                   Withdraw Now <ArrowUpRight className="w-4 h-4" />
                 </Link>
               </div>
@@ -155,14 +182,10 @@ export default function DashboardLayout({ children }) {
                 {initials}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-gray-900 truncate">{user?.name || 'User'}</div>
-                <div className="text-xs text-gray-500 truncate">{user?.email || ''}</div>
+                <div className="text-sm font-medium text-gray-900 truncate">{displayUser?.name || 'User'}</div>
+                <div className="text-xs text-gray-500 truncate">{displayUser?.email || ''}</div>
               </div>
-              <button
-                onClick={handleLogout}
-                className="p-2 hover:bg-gray-100 rounded-lg"
-                title="Logout"
-              >
+              <button onClick={handleLogout} className="p-2 hover:bg-gray-100 rounded-lg" title="Logout">
                 <LogOut className="w-5 h-5 text-gray-600" />
               </button>
             </div>
@@ -186,10 +209,7 @@ export default function DashboardLayout({ children }) {
                 <div className="text-xl font-bold text-gray-900">Earnko</div>
               </div>
             </Link>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="p-2 rounded-lg hover:bg-gray-100"
-            >
+            <button onClick={() => setSidebarOpen(false)} className="p-2 rounded-lg hover:bg-gray-100">
               <X className="w-5 h-5 text-gray-600" />
             </button>
           </div>
@@ -217,10 +237,7 @@ export default function DashboardLayout({ children }) {
 
       {/* Overlay for mobile */}
       {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
       {/* Main Content */}
@@ -248,14 +265,7 @@ export default function DashboardLayout({ children }) {
                     </span>
                   )}
                 </button>
-                <button className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
-                  <Wallet className="w-4 h-4" />
-                  <span className="text-sm font-medium">₹12,450</span>
-                </button>
-                <Link
-                  href="/dashboard/settings"
-                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
-                >
+                <Link href="/dashboard/settings" className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
                   <User className="w-5 h-5" />
                 </Link>
               </div>
@@ -274,8 +284,8 @@ export default function DashboardLayout({ children }) {
   )
 }
 
-// Add this icon component at the top if not imported
-const ArrowUpRight = ({ className = "w-4 h-4" }) => (
+// Small arrow icon
+const ArrowUpRight = ({ className = 'w-4 h-4' }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 17L17 7M7 7h10v10" />
   </svg>
