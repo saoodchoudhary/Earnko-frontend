@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'react-hot-toast';
 import { ChevronLeft, Send, XCircle } from 'lucide-react';
+import { getSocket, reconnectSocket } from '@/lib/socket';
 
 export default function SupportTicketDetail({ params }) {
   const { id } = React.use(params);
@@ -12,8 +13,8 @@ export default function SupportTicketDetail({ params }) {
   const [sending, setSending] = useState(false);
   const [closing, setClosing] = useState(false);
   const [reply, setReply] = useState('');
-
   const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+  const mountedRef = useRef(false);
 
   const load = async (signal) => {
     try {
@@ -34,51 +35,78 @@ export default function SupportTicketDetail({ params }) {
   };
 
   useEffect(() => {
+    mountedRef.current = true;
     const controller = new AbortController();
     load(controller.signal);
-    // Optional: auto-refresh every 15s to fetch new admin replies
-    const interval = setInterval(() => load(controller.signal), 15000);
-    return () => { controller.abort(); clearInterval(interval); };
+
+    const sock = getSocket();
+    if (!sock.connected) reconnectSocket();
+
+    const onConnect = () => {
+      sock.emit('support:join', { ticketId: id });
+    };
+    const onMessage = (payload) => {
+      if (payload?.ticketId !== id) return;
+      setTicket((prev) => {
+        if (!prev) return prev;
+        const replies = Array.isArray(prev.replies) ? prev.replies.slice() : [];
+        replies.push(payload.reply);
+        return { ...prev, replies, updatedAt: payload.reply?.createdAt || prev.updatedAt };
+      });
+    };
+    const onStatus = (payload) => {
+      if (payload?.ticketId !== id) return;
+      setTicket((prev) => prev ? ({ ...prev, status: payload.status, updatedAt: payload.updatedAt || prev.updatedAt }) : prev);
+    };
+    const onError = (err) => {
+      // Optional: show once
+      // toast.error(err?.message || 'Socket error');
+    };
+
+    sock.on('connect', onConnect);
+    sock.on('support:message', onMessage);
+    sock.on('support:status', onStatus);
+    sock.on('support:error', onError);
+
+    return () => {
+      sock.off('connect', onConnect);
+      sock.off('support:message', onMessage);
+      sock.off('support:status', onStatus);
+      sock.off('support:error', onError);
+      mountedRef.current = false;
+      controller.abort();
+    };
   }, [id]);
 
   const sendReply = async () => {
     if (!reply.trim()) return;
-    try {
-      setSending(true);
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${base}/api/support/tickets/${id}/reply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
-        body: JSON.stringify({ message: reply })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.message || 'Failed to reply');
-      setReply('');
-      await load();
-    } catch (err) {
-      toast.error(err.message || 'Failed');
-    } finally {
+    const sock = getSocket();
+    if (!sock.connected) reconnectSocket();
+    setSending(true);
+    sock.emit('support:message', { ticketId: id, message: reply }, (ack) => {
       setSending(false);
-    }
+      if (!ack?.ok) {
+        toast.error(ack?.error || 'Failed');
+        return;
+      }
+      setReply('');
+      // We also get the broadcast event which appends the reply
+    });
   };
 
   const closeTicket = async () => {
-    try {
-      setClosing(true);
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${base}/api/support/tickets/${id}/close`, {
-        method: 'PATCH',
-        headers: { Authorization: token ? `Bearer ${token}` : '' }
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.message || 'Failed to close');
-      toast.success('Ticket closed');
-      await load();
-    } catch (err) {
-      toast.error(err.message || 'Failed');
-    } finally {
+    const sock = getSocket();
+    if (!sock.connected) reconnectSocket();
+    setClosing(true);
+    sock.emit('support:status', { ticketId: id, status: 'closed' }, (ack) => {
       setClosing(false);
-    }
+      if (!ack?.ok) {
+        toast.error(ack?.error || 'Failed to close');
+        return;
+      }
+      toast.success('Ticket closed');
+      // Broadcast updates ticket state
+    });
   };
 
   return (
