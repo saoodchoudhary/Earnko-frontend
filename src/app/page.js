@@ -16,23 +16,13 @@ export default function HomePage() {
     async function check() {
       try {
         const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
-        if (!token) {
-          if (mounted) { setIsLoggedIn(false); setChecking(false) }
-          return
-        }
+        if (!token) { if (mounted) { setIsLoggedIn(false); setChecking(false) } return }
         const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/auth/me`, {
           headers: { Authorization: `Bearer ${token}` }
         })
-        if (!res.ok) {
-          localStorage.removeItem('token')
-          if (mounted) { setIsLoggedIn(false); setChecking(false) }
-          return
-        }
+        if (!res.ok) { localStorage.removeItem('token'); if (mounted) { setIsLoggedIn(false); setChecking(false) } return }
         if (mounted) { setIsLoggedIn(true); setChecking(false) }
-      } catch {
-        localStorage.removeItem('token')
-        if (mounted) { setIsLoggedIn(false); setChecking(false) }
-      }
+      } catch { localStorage.removeItem('token'); if (mounted) { setIsLoggedIn(false); setChecking(false) } }
     }
     check()
     return () => { mounted = false }
@@ -47,7 +37,6 @@ export default function HomePage() {
         const sRes = await fetch(`${base}/api/stores`, { signal: controller.signal })
         const sData = await sRes.json()
         if (sRes.ok) setStores(sData?.data?.stores || [])
-
         const params = new URLSearchParams()
         if (storeId) params.set('storeId', storeId)
         const pRes = await fetch(`${base}/api/products?${params.toString()}`, { signal: controller.signal })
@@ -59,39 +48,41 @@ export default function HomePage() {
     return () => controller.abort()
   }, [storeId])
 
-  const generate = async (productId) => {
+  const generateCuelinksProduct = async (productId) => {
     try {
       const token = localStorage.getItem('token')
-      if (!token) {
-        toast.error('Please login to generate link')
-        return
-      }
+      if (!token) return toast.error('Please login to generate link')
       const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
-      const res = await fetch(`${base}/api/links/generate-product`, {
+      const res = await fetch(`${base}/api/links/generate-cuelinks-product`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
         body: JSON.stringify({ productId })
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data?.message || 'Failed to generate link')
-      const url = data?.data?.link?.url
-      await navigator.clipboard.writeText(url)
-      toast.success('Link copied!')
+      if (!res.ok) {
+        if (res.status === 409 && data?.code === 'campaign_approval_required') {
+          toast.error('Campaign needs approval. Please apply in Cuelinks.')
+          return
+        }
+        throw new Error(data?.message || 'Failed to generate Cuelinks link')
+      }
+      const link = data?.data?.link
+      if (!link) throw new Error('No link returned')
+      await navigator.clipboard.writeText(link)
+      toast.success('Cuelinks link copied!')
     } catch (err) {
       toast.error(err.message || 'Failed to generate')
     }
   }
 
-  if (checking) {
-    return <div className="min-h-screen flex items-center justify-center text-gray-600">Loading...</div>
-  }
+  if (checking) return <div className="min-h-screen flex items-center justify-center text-gray-600">Loading...</div>
 
   return (
     <main className="min-h-screen">
       <section className="bg-gray-900 text-white py-10">
         <div className="container mx-auto px-4">
           <h1 className="text-2xl md:text-3xl font-bold">Discover Products</h1>
-          <p className="text-gray-300 mt-1">Share links and earn commission when purchases are approved.</p>
+          <p className="text-gray-300 mt-1">Share links and earn commission via Cuelinks.</p>
           {!isLoggedIn && (
             <div className="mt-4">
               <a href="/login" className="btn btn-primary">Login</a>
@@ -131,7 +122,9 @@ export default function HomePage() {
                   <div className="mt-2 font-semibold">₹{Number(p.price || 0).toFixed(0)}</div>
                   <div className="mt-auto pt-3">
                     {isLoggedIn ? (
-                      <button className="btn btn-primary w-full" onClick={() => generate(p._id)}>Generate & Copy Link</button>
+                      <button className="btn btn-primary w-full" onClick={() => generateCuelinksProduct(p._id)}>
+                        Copy Cuelinks Link
+                      </button>
                     ) : (
                       <a className="btn btn-outline w-full" href="/login">Login to Share</a>
                     )}

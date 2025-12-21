@@ -8,10 +8,11 @@ import { useAuth } from '../context/AuthContext';
 export default function OfferCard({ offer }) {
   const { token } = useAuth();
   const [genUrl, setGenUrl] = useState(null);
+  const [cueUrl, setCueUrl] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingCue, setLoadingCue] = useState(false);
 
   const commissionText = () => {
-    // Try to normalize display across possible shapes (CategoryCommission/Commission)
     const type = offer.commissionType || offer.type || 'percentage';
     const rate = offer.commissionRate ?? offer.rate ?? offer.percentage ?? offer.amount ?? 0;
     const cap = offer.maxCap != null ? ` • Cap ₹${Number(offer.maxCap).toFixed(0)}` : '';
@@ -21,7 +22,7 @@ export default function OfferCard({ offer }) {
 
   const titleText = () => offer.label || offer.title || offer.name || 'Offer';
 
-  const generateLink = async () => {
+  const generateTracked = async () => {
     if (!token) return toast.error('Login required');
     setLoading(true);
     try {
@@ -30,11 +31,38 @@ export default function OfferCard({ offer }) {
       if (!url) throw new Error('No link generated');
       setGenUrl(url);
       await navigator.clipboard.writeText(url);
-      toast.success('Link generated & copied!');
+      toast.success('Tracked link copied!');
     } catch (err) {
       toast.error(err?.response?.data?.message || 'Failed to generate link');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const buildSubid = () => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || 'null');
+      const rand = Math.random().toString(16).slice(2, 10);
+      return user?._id ? `u${user._id}-${rand}` : rand;
+    } catch { return Math.random().toString(16).slice(2, 10); }
+  };
+
+  const generateCuelinks = async () => {
+    if (!token) return toast.error('Login required');
+    setLoadingCue(true);
+    try {
+      const dest = offer.store?.baseUrl || '';
+      if (!dest) throw new Error('Offer has no destination URL');
+      const res = await api.post('/api/affiliate/cuelinks/deeplink', { url: dest, subid: buildSubid() });
+      const short = res.data?.data?.link;
+      if (!short) throw new Error('No Cuelinks short URL');
+      setCueUrl(short);
+      await navigator.clipboard.writeText(short);
+      toast.success('Cuelinks link copied!');
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err.message || 'Failed to generate Cuelinks link');
+    } finally {
+      setLoadingCue(false);
     }
   };
 
@@ -56,13 +84,24 @@ export default function OfferCard({ offer }) {
       </div>
 
       <div className="px-4 pb-4 grid grid-cols-2 gap-2">
-        <button className="btn btn-outline" onClick={generateLink} disabled={loading}>
-          {loading ? 'Generating...' : 'Generate'}
+        <button className="btn btn-outline" onClick={generateTracked} disabled={loading}>
+          {loading ? 'Generating...' : 'Tracked Link'}
         </button>
         {genUrl ? (
           <a className="btn btn-primary" href={genUrl} target="_blank" rel="noopener noreferrer">Open</a>
         ) : (
-          <button className="btn btn-primary" onClick={generateLink}>Copy Link</button>
+          <button className="btn btn-primary" onClick={generateTracked}>Copy Tracked</button>
+        )}
+      </div>
+
+      <div className="px-4 pb-4 grid grid-cols-2 gap-2">
+        <button className="btn btn-outline" onClick={generateCuelinks} disabled={loadingCue}>
+          {loadingCue ? 'Generating...' : 'Cuelinks Link'}
+        </button>
+        {cueUrl ? (
+          <a className="btn btn-primary" href={cueUrl} target="_blank" rel="noopener noreferrer">Open</a>
+        ) : (
+          <button className="btn btn-primary" onClick={generateCuelinks}>Copy Cuelinks</button>
         )}
       </div>
     </div>

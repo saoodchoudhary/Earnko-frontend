@@ -30,7 +30,9 @@ export default function AdminProductsPage() {
       setTotal(data?.data?.total || 0)
     } catch (err) {
       if (err.name !== 'AbortError') toast.error(err.message || 'Error')
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -84,21 +86,27 @@ export default function AdminProductsPage() {
               <Th>Store</Th>
               <Th>Price</Th>
               <Th>Status</Th>
+              <Th>Cuelinks</Th>
               <Th>Updated</Th>
               <Th className="text-right">Action</Th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="p-4"><div className="h-10 skeleton rounded" /></td></tr>
+              <tr><td colSpan={7} className="p-4"><div className="h-10 skeleton rounded" /></td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={6} className="p-6 text-center text-gray-500">No products</td></tr>
+              <tr><td colSpan={7} className="p-6 text-center text-gray-500">No products</td></tr>
             ) : items.map(it => (
               <tr key={it._id} className="border-t">
                 <Td>{it.title}</Td>
                 <Td>{it.store?.name || '-'}</Td>
                 <Td>₹{Number(it.price || 0).toFixed(0)}</Td>
                 <Td>{it.isActive ? 'Active' : 'Inactive'}</Td>
+                <Td>
+                  <span className="px-2 py-1 border rounded text-xs">
+                    {it.lastCuelinksValidatedAt ? 'Validated' : (it.cuelinksChannelId || it.cuelinksCampaignId ? 'Configured' : 'Not set')}
+                  </span>
+                </Td>
                 <Td>{it.updatedAt ? new Date(it.updatedAt).toLocaleDateString() : '-'}</Td>
                 <Td className="text-right">
                   <div className="flex gap-2 justify-end">

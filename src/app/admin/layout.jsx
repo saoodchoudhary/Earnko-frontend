@@ -72,6 +72,8 @@ export default function AdminLayout({ children }) {
             <Link href="/admin/users" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><Users className="w-4 h-4" /> Users</Link>
             <Link href="/admin/stores" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><StoreIcon className="w-4 h-4" /> Stores</Link>
             <Link href="/admin/offers" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><Tag className="w-4 h-4" /> Offers</Link>
+            <Link href="/admin/products" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><Grid className="w-4 h-4" /> Products</Link>
+            <Link href="/admin/support" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><ClipboardList className="w-4 h-4" /> Support Tickets</Link>
             <Link href="/admin/clicks" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><MousePointer className="w-4 h-4" /> Clicks</Link>
             <Link href="/admin/webhooks" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><Webhook className="w-4 h-4" /> Webhooks</Link>
             <Link href="/admin/settings" className="flex items-center gap-3 p-2 rounded hover:bg-gray-50"><SettingsIcon className="w-4 h-4" /> Settings</Link>

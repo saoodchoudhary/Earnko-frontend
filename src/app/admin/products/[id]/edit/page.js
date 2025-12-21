@@ -56,7 +56,7 @@ export default function AdminProductEditPage() {
   if (!item) return <div className="p-4">Not found</div>
 
   return (
-    <main className="min-h-screen max-w-3xl mx-auto">
+    <main className="min-h-screen max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold mb-4">Edit Product</h1>
       <div className="bg-white border rounded p-4">
         <ProductForm initial={item} onSubmit={handleSubmit} submitting={saving} />

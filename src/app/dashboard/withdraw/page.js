@@ -30,7 +30,7 @@ export default function WithdrawPage() {
     }
     load()
     return () => controller.abort()
-  }, []);
+  }, [])
 
   const submit = async (e) => {
     e.preventDefault()

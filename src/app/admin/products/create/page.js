@@ -28,7 +28,7 @@ export default function AdminProductCreatePage() {
   }
 
   return (
-    <main className="min-h-screen max-w-3xl mx-auto">
+    <main className="min-h-screen max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold mb-4">Create Product</h1>
       <div className="bg-white border rounded p-4">
         <ProductForm onSubmit={handleSubmit} submitting={saving} />
