@@ -21,12 +21,13 @@ import {
 
 const navItems = [
   { key: 'dashboard', label: 'Dashboard', href: '/dashboard', icon: Grid },
-  { key: 'affiliate', label: 'Affiliate', href: '/dashboard/affiliate', icon: LinkIcon },
+  { key: 'affiliate', label: 'Create Link', href: '/dashboard/affiliate', icon: LinkIcon },
   { key: 'transactions', label: 'Transactions', href: '/dashboard/transactions', icon: ShoppingBag },
   { key: 'withdraw', label: 'Withdraw', href: '/dashboard/withdraw', icon: Wallet },
   { key: 'analytics', label: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
   { key: 'stores', label: 'Stores', href: '/stores', icon: CreditCard },
-  { key: 'refer', label: 'Refer & Earn', href: '/dashboard/refer', icon: Users },
+  { key: "support", label: "Support", href: "/dashboard/support", icon: CreditCard },
+  { key: 'refer', label: 'Refer & Earn', href: '/dashboard/referrals', icon: Users },
   { key: 'settings', label: 'Settings', href: '/dashboard/settings', icon: SettingsIcon }
 ]
 
