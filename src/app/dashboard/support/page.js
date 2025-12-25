@@ -351,15 +351,7 @@ export default function SupportPage() {
               <h3 className="font-bold text-gray-900 mb-4">Contact Information</h3>
               
               <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 bg-white/50 rounded-lg">
-                  <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                    <Phone className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">Phone Support</div>
-                    <div className="text-sm text-gray-600">+91 98765 43210</div>
-                  </div>
-                </div>
+           
                 
                 <div className="flex items-center gap-3 p-3 bg-white/50 rounded-lg">
                   <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
@@ -367,7 +359,7 @@ export default function SupportPage() {
                   </div>
                   <div>
                     <div className="text-sm font-medium text-gray-900">Email Support</div>
-                    <div className="text-sm text-gray-600">support@earnko.com</div>
+                    <div className="text-sm text-gray-600">officialearnko@gmail.com</div>
                   </div>
                 </div>
                 

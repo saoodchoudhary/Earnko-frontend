@@ -83,8 +83,7 @@ export default function Footer() {
               Support
             </h3>
             <div className="space-y-4">
-              <ContactItem icon={<Mail className="w-4 h-4" />} text="support@earnko.com" />
-              <ContactItem icon={<Phone className="w-4 h-4" />} text="+91 98765 43210" />
+              <ContactItem icon={<Mail className="w-4 h-4" />} text="officialearnko@gmail.com" />
               <ContactItem icon={<MapPin className="w-4 h-4" />} text="Mumbai, India" />
             </div>
           </div>

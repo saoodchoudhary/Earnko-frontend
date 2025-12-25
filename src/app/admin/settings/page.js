@@ -194,7 +194,7 @@ export default function AdminSettingsPage() {
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400"
                       value={form.supportEmail?.value || ''} 
                       onChange={(e) => change('supportEmail', e.target.value)} 
-                      placeholder="support@earnko.com"
+                      placeholder="officialearnko@gmail.com"
                     />
                   </Field>
                 </div>
