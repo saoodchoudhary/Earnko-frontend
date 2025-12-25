@@ -2,13 +2,25 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'react-hot-toast'
+import {
+  Plus, Trash2, Link as LinkIcon, CheckCircle, AlertCircle,
+  Search, Shield, Globe, Tag, DollarSign, Image as ImageIcon,
+  Calendar, RefreshCw, ExternalLink
+} from 'lucide-react'
 
 export default function ProductForm({ initial, onSubmit, submitting }) {
   const [stores, setStores] = useState([])
   const [loadingStores, setLoadingStores] = useState(true)
   const [campaigns, setCampaigns] = useState([])
   const [campaignLoading, setCampaignLoading] = useState(false)
-  const [validation, setValidation] = useState({ ok: false, link: '', message: '', code: '', host: '', suggestions: [] })
+  const [validation, setValidation] = useState({ 
+    ok: false, 
+    link: '', 
+    message: '', 
+    code: '', 
+    host: '', 
+    suggestions: [] 
+  })
 
   const [form, setForm] = useState({
     title: initial?.title || '',
@@ -24,7 +36,6 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
       type: initial?.commissionOverride?.type || '',
       maxCap: initial?.commissionOverride?.maxCap ?? ''
     },
-    // Cuelinks integration fields
     cuelinksChannelId: initial?.cuelinksChannelId || '',
     cuelinksCampaignId: initial?.cuelinksCampaignId || '',
     cuelinksCountryId: initial?.cuelinksCountryId || '',
@@ -34,7 +45,9 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
     const controller = new AbortController()
     async function loadStores() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/stores`, { signal: controller.signal })
+        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/stores`, { 
+          signal: controller.signal 
+        })
         const data = await res.json()
         if (res.ok) setStores(data?.data?.stores || [])
       } finally {
@@ -46,38 +59,50 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
   }, [])
 
   useEffect(() => {
-    // Auto-fetch campaigns by deeplink host when deeplink changes
     const controller = new AbortController()
     async function lookupCampaigns() {
       const url = form.deeplink.trim()
       if (!url) { setCampaigns([]); return }
       let host = ''
-      try { host = new URL(url).hostname.replace(/^www\./, '') } catch { setCampaigns([]); return }
+      try { 
+        host = new URL(url).hostname.replace(/^www\./, '') 
+      } catch { 
+        setCampaigns([]); 
+        return 
+      }
       try {
         setCampaignLoading(true)
         const token = localStorage.getItem('token')
-        const qs = new URLSearchParams({ search_term: host, per_page: '30' })
+        const qs = new URLSearchParams({ 
+          search_term: host, 
+          per_page: '30' 
+        })
         const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/cuelinks/campaigns?${qs.toString()}`, {
           signal: controller.signal,
           headers: { Authorization: token ? `Bearer ${token}` : '' }
         })
         const data = await res.json()
         if (res.ok) setCampaigns(data?.data?.campaigns || data?.data?.data || [])
-      } catch {} finally { setCampaignLoading(false) }
+      } catch {} finally { 
+        setCampaignLoading(false) 
+      }
     }
     lookupCampaigns()
     return () => controller.abort()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.deeplink])
 
   const change = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
-  const changeOverride = (k, v) => setForm(prev => ({ ...prev, commissionOverride: { ...prev.commissionOverride, [k]: v } }))
+  const changeOverride = (k, v) => setForm(prev => ({ 
+    ...prev, 
+    commissionOverride: { ...prev.commissionOverride, [k]: v } 
+  }))
 
   const submit = (e) => {
     e.preventDefault()
     if (!form.title.trim()) return toast.error('Title required')
     if (!form.deeplink.trim()) return toast.error('Product URL required')
     if (!form.store) return toast.error('Store required')
+    
     onSubmit({
       ...form,
       price: form.price === '' ? 0 : Number(form.price),
@@ -94,18 +119,35 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
   }
 
   const addImage = () => change('images', [...form.images, ''])
-  const updateImage = (idx, val) => { const arr = [...form.images]; arr[idx] = val; change('images', arr) }
+  const updateImage = (idx, val) => { 
+    const arr = [...form.images]; 
+    arr[idx] = val; 
+    change('images', arr) 
+  }
   const removeImage = (idx) => change('images', form.images.filter((_, i) => i !== idx))
 
   const validateCuelinks = async () => {
-    setValidation({ ok: false, link: '', message: '', code: '', host: '', suggestions: [] })
+    setValidation({ 
+      ok: false, 
+      link: '', 
+      message: '', 
+      code: '', 
+      host: '', 
+      suggestions: [] 
+    })
     try {
       if (!form.deeplink.trim()) return toast.error('Enter product URL to validate')
       const token = localStorage.getItem('token')
       const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/cuelinks/validate-link`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
-        body: JSON.stringify({ url: form.deeplink, channel_id: form.cuelinksChannelId || undefined })
+        headers: { 
+          'Content-Type': 'application/json', 
+          Authorization: token ? `Bearer ${token}` : '' 
+        },
+        body: JSON.stringify({ 
+          url: form.deeplink, 
+          channel_id: form.cuelinksChannelId || undefined 
+        })
       })
       const data = await res.json()
       if (!res.ok) {
@@ -123,182 +165,496 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
         }
         throw new Error(data?.message || 'Validation failed')
       }
-      setValidation({ ok: true, link: data?.data?.link || '', message: 'Valid' })
-      toast.success('Cuelinks validated')
+      setValidation({ 
+        ok: true, 
+        link: data?.data?.link || '', 
+        message: 'Valid Cuelinks URL generated' 
+      })
+      toast.success('Cuelinks validation successful')
     } catch (err) {
-      toast.error(err.message || 'Failed')
+      toast.error(err.message || 'Validation failed')
     }
   }
 
   return (
-    <form onSubmit={submit} className="space-y-6">
-      {/* Basic */}
-      <section className="bg-white border rounded p-4 space-y-3">
-        <h3 className="font-semibold">Basic Details</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="text-xs text-gray-500">
-            Title
-            <input className="input mt-1" value={form.title} onChange={(e) => change('title', e.target.value)} />
-          </label>
-          <label className="text-xs text-gray-500">
-            Store
-            {loadingStores ? (
-              <div className="h-10 skeleton rounded mt-1" />
-            ) : (
-              <select className="input mt-1" value={form.store} onChange={(e) => change('store', e.target.value)}>
-                <option value="">Select store</option>
-                {stores.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
+    <div className="max-w-6xl mx-auto">
+      <form onSubmit={submit} className="space-y-6">
+        {/* Basic Information Card */}
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center">
+              <Tag className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Basic Information</h3>
+              <p className="text-gray-600 text-sm mt-1">Enter product details and select store</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Product Title *
+                </label>
+                <input
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                  value={form.title}
+                  onChange={(e) => change('title', e.target.value)}
+                  placeholder="Enter product title"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Store *
+                </label>
+                {loadingStores ? (
+                  <div className="h-12 bg-gray-200 rounded-lg animate-pulse"></div>
+                ) : (
+                  <select
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                    value={form.store}
+                    onChange={(e) => change('store', e.target.value)}
+                    required
+                  >
+                    <option value="">Select a store</option>
+                    {stores.map(s => (
+                      <option key={s._id} value={s._id}>{s.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Description
+              </label>
+              <textarea
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                rows={3}
+                value={form.description}
+                onChange={(e) => change('description', e.target.value)}
+                placeholder="Enter product description"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Price (₹)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₹</span>
+                  <input
+                    className="w-full pl-8 pr-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                    type="number"
+                    step="0.01"
+                    value={form.price}
+                    onChange={(e) => change('price', e.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Category Key
+                </label>
+                <input
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                  value={form.categoryKey}
+                  onChange={(e) => change('categoryKey', e.target.value)}
+                  placeholder="e.g., electronics, fashion"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Status
+                </label>
+                <select
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                  value={form.isActive ? 'active' : 'inactive'}
+                  onChange={(e) => change('isActive', e.target.value === 'active')}
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Product URL *
+              </label>
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                  value={form.deeplink}
+                  onChange={(e) => change('deeplink', e.target.value)}
+                  placeholder="https://example.com/product/..."
+                  required
+                />
+                {form.deeplink && (
+                  <a
+                    href={form.deeplink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Images Card */}
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center">
+              <ImageIcon className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Product Images</h3>
+              <p className="text-gray-600 text-sm mt-1">Add product image URLs</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {form.images.map((img, idx) => (
+              <div key={idx} className="flex gap-3 items-center">
+                <input
+                  className="flex-1 px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                  value={img}
+                  onChange={(e) => updateImage(idx, e.target.value)}
+                  placeholder="https://image-url.com/product.jpg"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeImage(idx)}
+                  className="px-4 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+            
+            <button
+              type="button"
+              onClick={addImage}
+              className="w-full py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Add Image URL
+            </button>
+          </div>
+        </div>
+
+        {/* Commission Override Card */}
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center">
+              <DollarSign className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Commission Override</h3>
+              <p className="text-gray-600 text-sm mt-1">Optional custom commission settings</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Commission Rate (%)
+              </label>
+              <div className="relative">
+                <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500">%</span>
+                <input
+                  className="w-full pr-10 pl-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                  type="number"
+                  step="0.01"
+                  value={form.commissionOverride.rate}
+                  onChange={(e) => changeOverride('rate', e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Commission Type
+              </label>
+              <select
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                value={form.commissionOverride.type}
+                onChange={(e) => changeOverride('type', e.target.value)}
+              >
+                <option value="">Select type</option>
+                <option value="percentage">Percentage</option>
+                <option value="fixed">Fixed Amount (₹)</option>
               </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Max Cap (₹)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₹</span>
+                <input
+                  className="w-full pl-8 pr-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                  type="number"
+                  step="0.01"
+                  value={form.commissionOverride.maxCap}
+                  onChange={(e) => changeOverride('maxCap', e.target.value)}
+                  placeholder="Maximum commission"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Cuelinks Integration Card */}
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center">
+                <LinkIcon className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Cuelinks Integration</h3>
+                <p className="text-gray-600 text-sm mt-1">Connect with Cuelinks for tracking</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={validateCuelinks}
+              className="px-6 py-3 bg-gray-800 text-white font-semibold rounded-lg hover:bg-gray-900 transition-colors flex items-center gap-2"
+            >
+              <Shield className="w-4 h-4" />
+              Validate with Cuelinks
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Channel ID
+                </label>
+                <input
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                  value={form.cuelinksChannelId}
+                  onChange={(e) => change('cuelinksChannelId', e.target.value)}
+                  placeholder="e.g., 101"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Campaign ID
+                </label>
+                <input
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                  value={form.cuelinksCampaignId}
+                  onChange={(e) => change('cuelinksCampaignId', e.target.value)}
+                  placeholder="Campaign reference"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Country ID
+                </label>
+                <input
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                  value={form.cuelinksCountryId}
+                  onChange={(e) => change('cuelinksCountryId', e.target.value)}
+                  placeholder="Country code"
+                />
+              </div>
+            </div>
+
+            {/* Validation Result */}
+            {validation.message && (
+              <div className={`border rounded-lg p-4 ${
+                validation.ok 
+                  ? 'border-green-200 bg-green-50' 
+                  : 'border-yellow-200 bg-yellow-50'
+              }`}>
+                <div className="flex items-start gap-3">
+                  <div className={`mt-0.5 ${
+                    validation.ok ? 'text-green-600' : 'text-yellow-600'
+                  }`}>
+                    {validation.ok ? (
+                      <CheckCircle className="w-5 h-5" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className={`font-medium ${
+                      validation.ok ? 'text-green-800' : 'text-yellow-800'
+                    }`}>
+                      {validation.message}
+                    </div>
+                    {validation.link && (
+                      <div className="text-sm text-gray-700 mt-2 break-all">
+                        {validation.link}
+                      </div>
+                    )}
+                    {validation.suggestions.length > 0 && (
+                      <div className="mt-3">
+                        <div className="text-sm font-medium text-yellow-800 mb-2">
+                          Available campaigns for approval:
+                        </div>
+                        <div className="space-y-1">
+                          {validation.suggestions.map((s, i) => (
+                            <div key={i} className="text-sm text-yellow-700">
+                              • {s}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
-          </label>
-        </div>
-        <label className="text-xs text-gray-500">
-          Description
-          <textarea className="input mt-1" rows={3} value={form.description} onChange={(e) => change('description', e.target.value)} />
-        </label>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <label className="text-xs text-gray-500">
-            Price (₹)
-            <input className="input mt-1" type="number" step="0.01" value={form.price} onChange={(e) => change('price', e.target.value)} />
-          </label>
-          <label className="text-xs text-gray-500">
-            Category Key
-            <input className="input mt-1" value={form.categoryKey} onChange={(e) => change('categoryKey', e.target.value)} placeholder="optional" />
-          </label>
-          <label className="text-xs text-gray-500">
-            Active
-            <select className="input mt-1" value={form.isActive ? 'yes' : 'no'} onChange={(e) => change('isActive', e.target.value === 'yes')}>
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </label>
-        </div>
-        <label className="text-xs text-gray-500">
-          Product URL (merchant page)
-          <input className="input mt-1" value={form.deeplink} onChange={(e) => change('deeplink', e.target.value)} placeholder="https://merchant.com/product/..." />
-        </label>
-      </section>
 
-      {/* Media */}
-      <section className="bg-white border rounded p-4 space-y-3">
-        <h3 className="font-semibold">Media</h3>
-        <div className="space-y-2">
-          {form.images.map((img, idx) => (
-            <div key={idx} className="flex gap-2">
-              <input className="input flex-1" value={img} onChange={(e) => updateImage(idx, e.target.value)} placeholder="https://image-url..." />
-              <button type="button" className="btn btn-outline" onClick={() => removeImage(idx)}>Remove</button>
-            </div>
-          ))}
-          <button type="button" className="btn btn-outline" onClick={addImage}>+ Add Image</button>
-        </div>
-      </section>
+            {/* Campaign Suggestions */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="text-sm font-bold text-gray-900">
+                  Campaign Suggestions
+                </div>
+                {campaignLoading && (
+                  <RefreshCw className="w-4 h-4 text-gray-500 animate-spin" />
+                )}
+              </div>
 
-      {/* Commission Override */}
-      <section className="bg-white border rounded p-4 space-y-3">
-        <h3 className="font-semibold">Commission Override (optional)</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <label className="text-xs text-gray-500">
-            Rate
-            <input className="input mt-1" type="number" step="0.01" value={form.commissionOverride.rate} onChange={(e) => changeOverride('rate', e.target.value)} placeholder="e.g., 8" />
-          </label>
-          <label className="text-xs text-gray-500">
-            Type
-            <select className="input mt-1" value={form.commissionOverride.type} onChange={(e) => changeOverride('type', e.target.value)}>
-              <option value="">None</option>
-              <option value="percentage">Percentage</option>
-              <option value="fixed">Fixed (₹)</option>
-            </select>
-          </label>
-          <label className="text-xs text-gray-500">
-            Max Cap (₹)
-            <input className="input mt-1" type="number" step="0.01" value={form.commissionOverride.maxCap} onChange={(e) => changeOverride('maxCap', e.target.value)} placeholder="optional" />
-          </label>
-        </div>
-      </section>
-
-      {/* Cuelinks Integration */}
-      <section className="bg-white border rounded p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold">Cuelinks Integration</h3>
-          <button type="button" className="btn btn-outline" onClick={validateCuelinks}>Validate with Cuelinks</button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <label className="text-xs text-gray-500">
-            channel_id (optional)
-            <input className="input mt-1" value={form.cuelinksChannelId} onChange={(e) => change('cuelinksChannelId', e.target.value)} placeholder="e.g., 101" />
-          </label>
-          <label className="text-xs text-gray-500">
-            campaign_id (optional)
-            <input className="input mt-1" value={form.cuelinksCampaignId} onChange={(e) => change('cuelinksCampaignId', e.target.value)} placeholder="for reference" />
-          </label>
-          <label className="text-xs text-gray-500">
-            country_id (optional)
-            <input className="input mt-1" value={form.cuelinksCountryId} onChange={(e) => change('cuelinksCountryId', e.target.value)} placeholder="defaults to account country" />
-          </label>
-        </div>
-
-        {/* Validation result */}
-        {validation.message && (
-          <div className={`border rounded p-3 ${validation.ok ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}>
-            <div className="text-sm">{validation.message}</div>
-            {validation.link && <div className="text-xs break-all mt-1">{validation.link}</div>}
-          </div>
-        )}
-
-        {/* Campaign suggestions */}
-        <div>
-          <div className="text-sm font-medium mb-2">Campaign suggestions</div>
-          {campaignLoading ? (
-            <div className="h-10 skeleton rounded" />
-          ) : campaigns.length === 0 ? (
-            <div className="text-sm text-gray-500">No matching campaigns found.</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <Th>Name</Th>
-                    <Th>Status</Th>
-                    <Th>App Status</Th>
-                    <Th>Country</Th>
-                    <Th>Action</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {campaigns.map((c, i) => (
-                    <tr key={c.id || i} className="border-t">
-                      <Td>{c.name || c.campaign_name || '-'}</Td>
-                      <Td>{c.status || '-'}</Td>
-                      <Td>{c.application_status || '-'}</Td>
-                      <Td>{Array.isArray(c.countries) ? c.countries.join(', ') : (c.country || '-')}</Td>
-                      <Td>
-                        <button
-                          type="button"
-                          className="px-2 py-1 text-xs border rounded hover:bg-gray-50"
-                          onClick={() => change('cuelinksCampaignId', String(c.id || c.campaign_id || ''))}
-                        >
-                          Select
-                        </button>
-                      </Td>
-                    </tr>
+              {campaignLoading ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="h-12 bg-gray-200 rounded-lg animate-pulse"></div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              ) : campaigns.length === 0 ? (
+                <div className="text-center py-6 border-2 border-dashed border-gray-300 rounded-lg">
+                  <Search className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-gray-600">No matching campaigns found</p>
+                  <p className="text-sm text-gray-500 mt-1">Enter a valid product URL to see campaigns</p>
+                </div>
+              ) : (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700">
+                            Campaign Name
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700">
+                            Status
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700">
+                            App Status
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700">
+                            Country
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700">
+                            Action
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {campaigns.map((c, i) => (
+                          <tr key={c.id || i} className="hover:bg-white transition-colors">
+                            <td className="px-4 py-3">
+                              <div className="font-medium text-gray-900">
+                                {c.name || c.campaign_name || '-'}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                c.status === 'approved_for_selected' ? 'bg-green-100 text-green-800' :
+                                c.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {c.status || '-'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                c.application_status === 'approved' ? 'bg-green-100 text-green-800' :
+                                c.application_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                c.application_status === 'rejected' ? 'bg-red-100 text-red-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {c.application_status || 'not_applied'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-1">
+                                <Globe className="w-3 h-3 text-gray-500" />
+                                <span>
+                                  {Array.isArray(c.countries) 
+                                    ? c.countries.join(', ') 
+                                    : (c.country || '-')}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <button
+                                type="button"
+                                onClick={() => change('cuelinksCampaignId', String(c.id || c.campaign_id || ''))}
+                                className="px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900 transition-colors"
+                              >
+                                Select
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              
+              <div className="mt-4 text-xs text-gray-500">
+                <div className="flex items-start gap-2">
+                  <Calendar className="w-3 h-3 mt-0.5" />
+                  <span>Campaigns with status "approved_for_selected" or "approved_for_selected_and_hidden" require application. Application status can be "not_applied", "pending", "approved", or "rejected".</span>
+                </div>
+              </div>
             </div>
-          )}
-          <div className="text-xs text-gray-500 mt-2">
-            Tip: Status approved_for_selected / approved_for_selected_and_hidden require application. Application status shows not_applied / pending / approved / rejected.
           </div>
         </div>
-      </section>
 
-      <div className="flex justify-end">
-        <button className="btn btn-primary" disabled={submitting}>{submitting ? 'Saving...' : 'Save Product'}</button>
-      </div>
-    </form>
+        {/* Submit Button */}
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            disabled={submitting}
+            className="px-8 py-3 bg-gray-800 text-white font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {submitting ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Saving Product...
+              </>
+            ) : (
+              'Save Product'
+            )}
+          </button>
+        </div>
+      </form>
+    </div>
   )
 }
-
-function Th({ children, className = '' }) { return <th className={`px-3 py-2 text-left text-xs font-medium text-gray-500 ${className}`}>{children}</th> }
-function Td({ children, className = '' }) { return <td className={`px-3 py-2 align-top ${className}`}>{children}</td> }

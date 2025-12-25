@@ -1,9 +1,14 @@
-// frontend-earnko/src/app/dashboard/transactions/[id]/page.js
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import DashboardLayout from '@/components/Layout/DashboardLayout'
-import Link from 'next/link'
+import {
+  ArrowLeft, ExternalLink, CreditCard, Calendar,
+  Package, DollarSign, CheckCircle, Clock,
+  AlertCircle, ShoppingBag, TrendingUp, Copy,
+  Shield
+} from 'lucide-react'
+import { toast } from 'react-hot-toast'
 
 export default function TransactionDetail() {
   const params = useParams()
@@ -18,7 +23,8 @@ export default function TransactionDetail() {
       setLoading(true)
       try {
         const token = localStorage.getItem('token')
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'}/api/transactions/${id}`, {
+        const base = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'
+        const res = await fetch(`${base}/api/transactions/${id}`, {
           headers: { Authorization: token ? `Bearer ${token}` : '' }
         })
         const data = await res.json()
@@ -33,35 +39,354 @@ export default function TransactionDetail() {
     load()
   }, [id])
 
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'approved':
+      case 'completed':
+        return 'text-green-600 bg-green-100'
+      case 'pending':
+        return 'text-amber-600 bg-amber-100'
+      case 'rejected':
+      case 'failed':
+        return 'text-red-600 bg-red-100'
+      default:
+        return 'text-gray-600 bg-gray-100'
+    }
+  }
+
+  const getStatusIcon = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'approved':
+      case 'completed':
+        return <CheckCircle className="w-4 h-4" />
+      case 'pending':
+        return <Clock className="w-4 h-4" />
+      case 'rejected':
+      case 'failed':
+        return <AlertCircle className="w-4 h-4" />
+      default:
+        return <Clock className="w-4 h-4" />
+    }
+  }
+
+  const copyToClipboard = (text, label) => {
+    navigator.clipboard.writeText(text)
+      .then(() => toast.success(`${label} copied!`))
+      .catch(() => toast.error('Failed to copy'))
+  }
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString)
+    return date.toLocaleString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
   return (
-    <DashboardLayout>
-      <div className="max-w-3xl mx-auto">
-        <button onClick={() => router.back()} className="text-sm text-primary-600 mb-4">← Back</button>
-        {loading ? (
-          <div className="p-8">Loading...</div>
-        ) : !tx ? (
-          <div className="p-6 text-gray-500">Transaction not found</div>
-        ) : (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold mb-2">Transaction Details</h3>
-            <div className="space-y-3 text-sm text-gray-700">
-              <div><strong>Order ID:</strong> {tx.orderId}</div>
-              <div><strong>Store:</strong> {tx.store?.name || 'N/A'}</div>
-              <div><strong>Order Date:</strong> {new Date(tx.orderDate || tx.createdAt).toLocaleString()}</div>
-              <div><strong>Product Amount:</strong> ₹{tx.productAmount || 0}</div>
-              <div><strong>Commission Amount:</strong> ₹{tx.commissionAmount || 0}</div>
-              <div><strong>Status:</strong> <span className="font-medium">{tx.status}</span></div>
-              {tx.fraudFlags && (
-                <div><strong>Fraud Flags:</strong> {tx.fraudFlags.isSuspicious ? 'Suspicious' : 'Clean'}</div>
+    <>
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-600 to-cyan-500 text-white">
+          <div className="container mx-auto px-4 py-6">
+            <button 
+              onClick={() => router.back()} 
+              className="flex items-center gap-2 text-blue-100 hover:text-white transition-colors mb-4"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Transactions
+            </button>
+            
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl md:text-3xl font-bold">Transaction Details</h1>
+                <p className="text-blue-100 mt-1">Order ID: {id?.substring(0, 8)}...</p>
+              </div>
+              
+              {tx && (
+                <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${getStatusColor(tx.status)}`}>
+                  {getStatusIcon(tx.status)}
+                  <span className="font-medium capitalize">{tx.status || 'Unknown'}</span>
+                </div>
               )}
-              <div><strong>Tracking Data:</strong> <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(tx.trackingData || {}, null, 2)}</pre></div>
-            </div>
-            <div className="mt-4">
-              <Link href={tx.trackingData?.product_url || '#'}><a target="_blank" className="text-primary-600">Open product</a></Link>
             </div>
           </div>
-        )}
+        </div>
+
+        {/* Main Content */}
+        <div className="container mx-auto px-4 py-6">
+          {loading ? (
+            <div className="bg-white border border-gray-200 rounded-xl p-8">
+              <div className="space-y-4">
+                <div className="h-8 bg-gray-200 rounded animate-pulse w-1/3"></div>
+                <div className="h-4 bg-gray-200 rounded animate-pulse w-1/2"></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="h-24 bg-gray-200 rounded-xl animate-pulse"></div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : !tx ? (
+            <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+              <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+              <h3 className="text-lg font-medium text-gray-700 mb-1">Transaction Not Found</h3>
+              <p className="text-gray-600 mb-4">The transaction you're looking for doesn't exist or has been removed.</p>
+              <button
+                onClick={() => router.push('/dashboard/transactions')}
+                className="px-6 py-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold rounded-lg hover:shadow-lg transition-all"
+              >
+                View All Transactions
+              </button>
+            </div>
+          ) : (
+            <div className="grid lg:grid-cols-3 gap-6">
+              {/* Left Column - Transaction Details */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* Transaction Summary */}
+                <div className="bg-white border border-gray-200 rounded-xl p-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center">
+                      <CreditCard className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-gray-900">Transaction Summary</h2>
+                      <p className="text-gray-600 text-sm mt-1">Detailed information about this transaction</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div>
+                        <div className="text-xs text-gray-500 uppercase font-medium mb-1">Order ID</div>
+                        <div className="flex items-center gap-2">
+                          <code className="font-mono text-sm bg-gray-100 px-3 py-1.5 rounded-lg flex-1">
+                            {tx.orderId || 'N/A'}
+                          </code>
+                          <button
+                            onClick={() => copyToClipboard(tx.orderId, 'Order ID')}
+                            className="p-2 hover:bg-gray-100 rounded-lg"
+                          >
+                            <Copy className="w-4 h-4 text-gray-500" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-xs text-gray-500 uppercase font-medium mb-1">Store</div>
+                        <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg">
+                          <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center">
+                            <ShoppingBag className="w-5 h-5 text-blue-600" />
+                          </div>
+                          <div>
+                            <div className="font-medium text-gray-900">{tx.store?.name || 'Unknown Store'}</div>
+                            <div className="text-sm text-gray-500">{tx.store?.category || 'General'}</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div>
+                        <div className="text-xs text-gray-500 uppercase font-medium mb-1">Order Date</div>
+                        <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                          <Calendar className="w-5 h-5 text-gray-500" />
+                          <div className="text-sm text-gray-900">
+                            {formatDate(tx.orderDate || tx.createdAt)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-xs text-gray-500 uppercase font-medium mb-1">Fraud Status</div>
+                        <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${
+                          tx.fraudFlags?.isSuspicious 
+                            ? 'bg-red-100 text-red-600' 
+                            : 'bg-green-100 text-green-600'
+                        }`}>
+                          <Shield className="w-4 h-4" />
+                          <span className="text-sm font-medium">
+                            {tx.fraudFlags?.isSuspicious ? 'Suspicious Activity' : 'Verified'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Financial Details */}
+                <div className="bg-white border border-gray-200 rounded-xl p-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">Financial Details</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-5">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center">
+                          <Package className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <div className="text-sm text-gray-600">Product Amount</div>
+                          <div className="text-2xl font-bold text-gray-900">
+                            ₹{Number(tx.productAmount || 0).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-500">Total value of the product purchase</div>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-5">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center">
+                          <TrendingUp className="w-5 h-5 text-green-600" />
+                        </div>
+                        <div>
+                          <div className="text-sm text-gray-600">Commission Earned</div>
+                          <div className="text-2xl font-bold text-green-600">
+                            ₹{Number(tx.commissionAmount || 0).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-500">Your earnings from this transaction</div>
+                    </div>
+                  </div>
+
+                  {tx.commissionRate && (
+                    <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm text-gray-600">Commission Rate</div>
+                        <div className="text-sm font-bold text-gray-900">{tx.commissionRate}%</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Tracking Data */}
+                {tx.trackingData && Object.keys(tx.trackingData).length > 0 && (
+                  <div className="bg-white border border-gray-200 rounded-xl p-6">
+                    <h3 className="text-lg font-bold text-gray-900 mb-4">Tracking Information</h3>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <div className="text-sm font-medium text-gray-700 mb-2">Raw Tracking Data</div>
+                      <pre className="text-xs bg-white p-3 rounded-lg overflow-x-auto">
+                        {JSON.stringify(tx.trackingData, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column - Actions & Info */}
+              <div className="space-y-6">
+                {/* Quick Actions */}
+                <div className="bg-white border border-gray-200 rounded-xl p-6">
+                  <h3 className="font-bold text-gray-900 mb-4">Quick Actions</h3>
+                  <div className="space-y-3">
+                    {tx.trackingData?.product_url && (
+                      <a
+                        href={tx.trackingData.product_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold rounded-lg hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        View Product
+                      </a>
+                    )}
+                    
+                    <button className="w-full py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+                      <Copy className="w-4 h-4" />
+                      Copy Details
+                    </button>
+                    
+                    <button className="w-full py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+                      <AlertCircle className="w-4 h-4" />
+                      Report Issue
+                    </button>
+                  </div>
+                </div>
+
+                {/* Transaction Timeline */}
+                <div className="bg-white border border-gray-200 rounded-xl p-6">
+                  <h3 className="font-bold text-gray-900 mb-4">Transaction Timeline</h3>
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                        <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">Order Placed</div>
+                        <div className="text-xs text-gray-500">
+                          {formatDate(tx.orderDate || tx.createdAt)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                        <div className="w-2 h-2 bg-green-600 rounded-full"></div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">Commission Approved</div>
+                        <div className="text-xs text-gray-500">
+                          {tx.status === 'approved' || tx.status === 'completed' 
+                            ? formatDate(tx.updatedAt || tx.createdAt)
+                            : 'Pending approval'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        tx.status === 'approved' || tx.status === 'completed'
+                          ? 'bg-green-100'
+                          : tx.status === 'rejected' || tx.status === 'failed'
+                          ? 'bg-red-100'
+                          : 'bg-amber-100'
+                      }`}>
+                        <div className={`w-2 h-2 rounded-full ${
+                          tx.status === 'approved' || tx.status === 'completed'
+                            ? 'bg-green-600'
+                            : tx.status === 'rejected' || tx.status === 'failed'
+                            ? 'bg-red-600'
+                            : 'bg-amber-600'
+                        }`}></div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">Current Status</div>
+                        <div className="text-xs text-gray-500 capitalize">{tx.status || 'Processing'}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Additional Info */}
+                <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-6">
+                  <h3 className="font-bold text-gray-900 mb-4">Additional Information</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Transaction ID</span>
+                      <span className="text-sm font-mono text-gray-900">{id?.substring(0, 8)}...</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Reference</span>
+                      <span className="text-sm text-gray-900">{tx.referenceId || 'N/A'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Payment Method</span>
+                      <span className="text-sm text-gray-900">{tx.paymentMethod || 'N/A'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Currency</span>
+                      <span className="text-sm text-gray-900">INR (₹)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </DashboardLayout>
+    </>
   )
 }

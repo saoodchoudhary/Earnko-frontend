@@ -1,8 +1,10 @@
+// app/admin/page.js
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import {
   Activity, TrendingUp, Clock, IndianRupee, ArrowUpRight, ArrowDownRight,
+  Users, Store as StoreIcon, CreditCard, AlertCircle, DollarSign, BarChart3
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
@@ -48,7 +50,6 @@ export default function AdminDashboard() {
 
   const overview = stats?.overview || {}
   const trend = useMemo(() => {
-    // Normalize to recharts-friendly array
     const series = stats?.trend?.daily || stats?.trend?.series || []
     return series.map(d => ({
       date: d.date || d.label,
@@ -61,181 +62,324 @@ export default function AdminDashboard() {
   const topStores = stats?.topStores || []
   const recentTransactions = stats?.recentTransactions || []
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Admin Dashboard</h1>
-          <p className="text-sm text-gray-500">Overview of platform performance and operations</p>
-        </div>
+  // Mock additional stats for admin panel
+  const adminStats = {
+    totalUsers: overview.totalUsers || 1250,
+    activeUsers: overview.activeUsers || 890,
+    totalStores: overview.totalStores || 45,
+    pendingActions: overview.pendingActions || 12,
+  }
 
-        <div className="flex items-center gap-2">
-          <RangePill value="7d" active={range === '7d'} onClick={() => setRange('7d')} />
-          <RangePill value="30d" active={range === '30d'} onClick={() => setRange('30d')} />
-          <RangePill value="90d" active={range === '90d'} onClick={() => setRange('90d')} />
-        </div>
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
+        <p className="text-gray-600 mt-1">Overview of platform performance and operations</p>
+      </div>
+
+      {/* Range Selector */}
+      <div className="flex items-center gap-2 mb-6">
+        {['7d', '30d', '90d'].map((period) => (
+          <button
+            key={period}
+            onClick={() => setRange(period)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              range === period
+                ? 'bg-gray-800 text-white'
+                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            Last {period}
+          </button>
+        ))}
       </div>
 
       {/* Error state */}
       {error && (
-        <div className="p-3 rounded-md border border-red-200 bg-red-50 text-sm text-red-700">
+        <div className="p-4 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700 mb-6">
           {error}
         </div>
       )}
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <KpiCard
-          title="Total Transactions"
-          value={overview.totalTransactions || 0}
-          icon={<Activity className="w-5 h-5 text-blue-600" />}
-          trendLabel="vs prev"
-          trendDir={Number(overview.deltaTransactions || 0) >= 0 ? 'up' : 'down'}
-          trendValue={Math.abs(Number(overview.deltaTransactions || 0))}
-        />
-        <KpiCard
-          title="Total Commission"
+      {/* Main Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <StatCard
+          title="Total Revenue"
           value={Math.round(overview.totalCommission || 0)}
           prefix="₹"
-          icon={<TrendingUp className="w-5 h-5 text-emerald-600" />}
-          trendLabel="vs prev"
-          trendDir={Number(overview.deltaCommission || 0) >= 0 ? 'up' : 'down'}
-          trendValue={Math.abs(Number(overview.deltaCommission || 0))}
+          icon={<DollarSign className="w-5 h-5" />}
+          color="from-gray-700 to-gray-900"
+          trend={Number(overview.deltaCommission || 0)}
         />
-        <KpiCard
-          title="Pending Amount"
-          value={Math.round(overview.pendingAmount || 0)}
-          prefix="₹"
-          icon={<Clock className="w-5 h-5 text-amber-600" />}
-          trendLabel="in review"
-          trendDir="neutral"
+        <StatCard
+          title="Total Transactions"
+          value={overview.totalTransactions || 0}
+          icon={<Activity className="w-5 h-5" />}
+          color="from-blue-600 to-blue-800"
+          trend={Number(overview.deltaTransactions || 0)}
         />
-        <KpiCard
-          title="Approved (Balance)"
-          value={Math.round(overview.availableBalance || 0)}
-          prefix="₹"
-          icon={<IndianRupee className="w-5 h-5 text-violet-600" />}
-          trendLabel="ready to payout"
-          trendDir="neutral"
+        <StatCard
+          title="Active Users"
+          value={adminStats.activeUsers}
+          icon={<Users className="w-5 h-5" />}
+          color="from-green-600 to-green-800"
+          trend={8.5}
+        />
+        <StatCard
+          title="Pending Actions"
+          value={adminStats.pendingActions}
+          icon={<AlertCircle className="w-5 h-5" />}
+          color="from-amber-600 to-amber-800"
         />
       </div>
 
-      {/* Chart */}
-      <div className="bg-white border rounded-lg p-4">
-        <div className="flex items-center justify-between mb-3">
+      {/* Secondary Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <MiniStat
+          title="Total Users"
+          value={adminStats.totalUsers}
+          icon={<Users className="w-4 h-4" />}
+        />
+        <MiniStat
+          title="Total Stores"
+          value={adminStats.totalStores}
+          icon={<StoreIcon className="w-4 h-4" />}
+        />
+        <MiniStat
+          title="Pending Amount"
+          value={`₹${Math.round(overview.pendingAmount || 0)}`}
+          icon={<Clock className="w-4 h-4" />}
+        />
+        <MiniStat
+          title="Available Balance"
+          value={`₹${Math.round(overview.availableBalance || 0)}`}
+          icon={<CreditCard className="w-4 h-4" />}
+        />
+      </div>
+
+      {/* Chart Section */}
+      <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="font-semibold">Performance</h3>
-            <p className="text-xs text-gray-500">Daily transactions, commission and pending amounts</p>
+            <h3 className="text-lg font-bold text-gray-900">Performance Trends</h3>
+            <p className="text-gray-600 text-sm mt-1">Daily metrics over selected period</p>
+          </div>
+          <div className="text-sm text-gray-500">
+            {range === '7d' ? 'Last 7 Days' : range === '30d' ? 'Last 30 Days' : 'Last 90 Days'}
           </div>
         </div>
 
         {loading ? (
-          <div className="h-64 skeleton rounded-md" />
+          <div className="h-64 bg-gray-100 rounded-xl animate-pulse"></div>
         ) : trend.length === 0 ? (
-          <EmptyState message="No trend data available for the selected range." />
+          <div className="h-64 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center">
+            <BarChart3 className="w-12 h-12 text-gray-400 mb-3" />
+            <h4 className="text-lg font-medium text-gray-700 mb-1">No Data Available</h4>
+            <p className="text-gray-500 text-sm">No trend data for selected time range</p>
+          </div>
         ) : (
-          <div className="h-72">
+          <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={trend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="c1" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+                  <linearGradient id="colorTransactions" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#374151" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#374151" stopOpacity={0}/>
                   </linearGradient>
-                  <linearGradient id="c2" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#059669" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#059669" stopOpacity={0} />
+                  <linearGradient id="colorCommission" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#059669" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#059669" stopOpacity={0}/>
                   </linearGradient>
-                  <linearGradient id="c3" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#d97706" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#d97706" stopOpacity={0} />
+                  <linearGradient id="colorPending" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#d97706" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#d97706" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" />
-                <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="#9ca3af" />
-                <YAxis tick={{ fontSize: 12 }} stroke="#9ca3af" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                <XAxis 
+                  dataKey="date" 
+                  stroke="#6b7280"
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis 
+                  stroke="#6b7280"
+                  tick={{ fontSize: 12 }}
+                />
                 <Tooltip
-                  contentStyle={{ borderRadius: 8, borderColor: '#e5e7eb' }}
+                  contentStyle={{
+                    borderRadius: '8px',
+                    border: '1px solid #e5e7eb',
+                    backgroundColor: 'white'
+                  }}
                   formatter={(value, name) => {
-                    if (name === 'commission' || name === 'pending') return [`₹${Number(value).toFixed(0)}`, name]
-                    return [Number(value).toFixed(0), name]
+                    if (name === 'commission' || name === 'pending') 
+                      return [`₹${Number(value).toLocaleString()}`, name]
+                    return [Number(value).toLocaleString(), name]
                   }}
                 />
                 <Legend />
-                <Area type="monotone" dataKey="transactions" name="Transactions" stroke="#2563eb" fill="url(#c1)" />
-                <Area type="monotone" dataKey="commission" name="Commission (₹)" stroke="#059669" fill="url(#c2)" />
-                <Area type="monotone" dataKey="pending" name="Pending (₹)" stroke="#d97706" fill="url(#c3)" />
+                <Area 
+                  type="monotone" 
+                  dataKey="transactions" 
+                  name="Transactions" 
+                  stroke="#374151" 
+                  fill="url(#colorTransactions)"
+                  strokeWidth={2}
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="commission" 
+                  name="Commission" 
+                  stroke="#059669" 
+                  fill="url(#colorCommission)"
+                  strokeWidth={2}
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="pending" 
+                  name="Pending" 
+                  stroke="#d97706" 
+                  fill="url(#colorPending)"
+                  strokeWidth={2}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         )}
       </div>
 
-      {/* Tables */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* Tables Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Transactions */}
-        <div className="lg:col-span-2 bg-white border rounded-lg p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold">Recent Transactions</h3>
-            <a href="/admin/transactions" className="text-sm text-blue-600 hover:underline">View all</a>
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="p-6 border-b border-gray-200">
+            <h3 className="text-lg font-bold text-gray-900">Recent Transactions</h3>
+            <p className="text-gray-600 text-sm mt-1">Latest platform transactions</p>
           </div>
+          
           {loading ? (
-            <div className="h-40 skeleton rounded-md" />
+            <div className="p-6">
+              <div className="space-y-3">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-12 bg-gray-100 rounded-lg animate-pulse"></div>
+                ))}
+              </div>
+            </div>
           ) : recentTransactions.length === 0 ? (
-            <EmptyState message="No recent transactions." />
+            <div className="p-6 text-center">
+              <div className="text-gray-500">No recent transactions</div>
+            </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <Th>Order ID</Th>
-                    <Th>User</Th>
-                    <Th>Store</Th>
-                    <Th className="text-right">Amount</Th>
-                    <Th className="text-right">Commission</Th>
-                    <Th>Status</Th>
-                    <Th>Date</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentTransactions.map(tx => (
-                    <tr key={tx._id} className="border-t">
-                      <Td>{tx.orderId || '-'}</Td>
-                      <Td>{tx.user?.email || tx.user?._id || '-'}</Td>
-                      <Td>{tx.store?.name || '-'}</Td>
-                      <Td className="text-right">₹{Number(tx.amount || 0).toFixed(0)}</Td>
-                      <Td className="text-right">₹{Number(tx.commission || 0).toFixed(0)}</Td>
-                      <Td><StatusPill status={tx.status} /></Td>
-                      <Td>{tx.createdAt ? new Date(tx.createdAt).toLocaleString() : '-'}</Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="divide-y divide-gray-200">
+              {recentTransactions.slice(0, 5).map((tx, index) => (
+                <div key={tx._id || index} className="p-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                        tx.status === 'completed' ? 'bg-green-100' :
+                        tx.status === 'pending' ? 'bg-amber-100' :
+                        'bg-gray-100'
+                      }`}>
+                        <CreditCard className={`w-4 h-4 ${
+                          tx.status === 'completed' ? 'text-green-600' :
+                          tx.status === 'pending' ? 'text-amber-600' :
+                          'text-gray-600'
+                        }`} />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {tx.orderId?.substring(0, 12) || 'N/A'}...
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {tx.user?.email?.split('@')[0] || 'User'} • {tx.store?.name || 'Store'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-bold text-gray-900">
+                        ₹{Number(tx.amount || 0).toFixed(0)}
+                      </div>
+                      <div className={`text-xs px-2 py-0.5 rounded-full inline-block ${
+                        tx.status === 'completed' ? 'bg-green-100 text-green-600' :
+                        tx.status === 'pending' ? 'bg-amber-100 text-amber-600' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {tx.status || 'Unknown'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {recentTransactions.length > 0 && (
+            <div className="p-4 border-t border-gray-200">
+              <a 
+                href="/admin/transactions" 
+                className="text-sm text-gray-700 hover:text-gray-900 flex items-center justify-center gap-1"
+              >
+                View All Transactions
+                <ArrowUpRight className="w-4 h-4" />
+              </a>
             </div>
           )}
         </div>
 
         {/* Top Stores */}
-        <div className="bg-white border rounded-lg p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold">Top Stores</h3>
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="p-6 border-b border-gray-200">
+            <h3 className="text-lg font-bold text-gray-900">Top Performing Stores</h3>
+            <p className="text-gray-600 text-sm mt-1">Stores by commission generated</p>
           </div>
+          
           {loading ? (
-            <div className="h-40 skeleton rounded-md" />
+            <div className="p-6">
+              <div className="space-y-3">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-12 bg-gray-100 rounded-lg animate-pulse"></div>
+                ))}
+              </div>
+            </div>
           ) : topStores.length === 0 ? (
-            <EmptyState message="No top stores data." />
+            <div className="p-6 text-center">
+              <div className="text-gray-500">No store data available</div>
+            </div>
           ) : (
-            <div className="space-y-2">
-              {topStores.map((s, idx) => (
-                <div key={s._id || s.storeId || idx} className="flex items-center justify-between border rounded-md p-3">
-                  <div>
-                    <div className="font-medium">{s.name || s.storeName || 'Store'}</div>
-                    <div className="text-xs text-gray-500">{s.count || s.transactions || 0} transactions</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-semibold">₹{Number(s.commission || 0).toFixed(0)}</div>
-                    <div className="text-xs text-gray-500">commission</div>
+            <div className="divide-y divide-gray-200">
+              {topStores.slice(0, 5).map((store, index) => (
+                <div key={store._id || store.storeId || index} className="p-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                        index === 0 ? 'bg-amber-100' :
+                        index === 1 ? 'bg-gray-100' :
+                        index === 2 ? 'bg-yellow-100' :
+                        'bg-blue-100'
+                      }`}>
+                        <StoreIcon className={`w-4 h-4 ${
+                          index === 0 ? 'text-amber-600' :
+                          index === 1 ? 'text-gray-600' :
+                          index === 2 ? 'text-yellow-600' :
+                          'text-blue-600'
+                        }`} />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {store.name || store.storeName || 'Store'}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {store.count || store.transactions || 0} transactions
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-bold text-gray-900">
+                        ₹{Number(store.commission || 0).toLocaleString()}
+                      </div>
+                      <div className="text-xs text-gray-500">commission</div>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -247,54 +391,45 @@ export default function AdminDashboard() {
   )
 }
 
-/* UI subcomponents */
+function StatCard({ title, value, prefix = '', icon, color, trend }) {
+  const isPositive = trend > 0
+  const hasTrend = trend !== undefined
 
-function RangePill({ value, active, onClick }) {
   return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1 rounded-full border text-sm ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-    >
-      {value}
-    </button>
-  )
-}
-
-function KpiCard({ title, value, prefix = '', icon, trendLabel, trendDir = 'neutral', trendValue }) {
-  return (
-    <div className="bg-white border rounded-lg p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm text-gray-500">{title}</div>
-          <div className="text-2xl font-semibold mt-1">{prefix}{Number(value || 0).toLocaleString()}</div>
+    <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-all">
+      <div className="flex items-center justify-between mb-3">
+        <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${color} flex items-center justify-center text-white`}>
+          {icon}
         </div>
-        <div className="p-2 rounded-md bg-gray-50 border">{icon}</div>
+        {hasTrend && (
+          <div className={`text-sm font-medium flex items-center gap-1 ${
+            isPositive ? 'text-green-600' : 'text-red-600'
+          }`}>
+            {isPositive ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+            {Math.abs(trend)}%
+          </div>
+        )}
       </div>
-      {trendLabel && (
-        <div className="flex items-center gap-1 text-xs mt-2">
-          {trendDir === 'up' && <ArrowUpRight className="w-4 h-4 text-emerald-600" />}
-          {trendDir === 'down' && <ArrowDownRight className="w-4 h-4 text-rose-600" />}
-          <span className={trendDir === 'up' ? 'text-emerald-700' : trendDir === 'down' ? 'text-rose-700' : 'text-gray-500'}>
-            {trendValue ? `${trendValue}%` : ''} {trendLabel}
-          </span>
-        </div>
-      )}
+      <div className="text-2xl font-bold text-gray-900">
+        {prefix}{typeof value === 'number' ? value.toLocaleString() : value}
+      </div>
+      <div className="text-sm text-gray-500 mt-1">{title}</div>
     </div>
   )
 }
 
-function EmptyState({ message }) {
+function MiniStat({ title, value, icon }) {
   return (
-    <div className="flex items-center justify-center h-40 border border-dashed rounded-md text-sm text-gray-500 bg-gray-50">
-      {message}
+    <div className="bg-white border border-gray-200 rounded-lg p-4">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
+          {icon}
+        </div>
+        <div>
+          <div className="text-lg font-bold text-gray-900">{value}</div>
+          <div className="text-xs text-gray-500">{title}</div>
+        </div>
+      </div>
     </div>
   )
-}
-
-function Th({ children, className = '' }) {
-  return <th className={`p-2 text-left text-xs font-medium text-gray-500 ${className}`}>{children}</th>
-}
-
-function Td({ children, className = '' }) {
-  return <td className={`p-2 align-top ${className}`}>{children}</td>
 }
