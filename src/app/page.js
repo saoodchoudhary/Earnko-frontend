@@ -56,7 +56,7 @@ export default function HomePage() {
   return (
     <>
       <Navbar />
-      <div className="">
+      <div className="mt-16 md:mt-0">
         {checking ? (
           <main className="min-h-[60vh]">
             <section className="bg-gradient-to-r from-blue-900 to-cyan-800 text-white py-12">

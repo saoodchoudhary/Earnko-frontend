@@ -508,16 +508,16 @@ export default function DashboardLayout({ children }) {
               <Grid className="w-5 h-5 text-gray-600" />
               <span className="text-xs mt-1">Home</span>
             </Link>
-            
+          
+            <Link href="/dashboard/analytics" className="flex flex-col items-center p-2">
+              <BarChart3 className="w-5 h-5 text-gray-600" />
+              <span className="text-xs mt-1">Analytics</span>
+            </Link>  
             <Link href="/dashboard/affiliate" className="flex flex-col items-center p-2">
               <Zap className="w-5 h-5 text-gray-600" />
               <span className="text-xs mt-1">Create</span>
             </Link>
             
-            <Link href="/offers" className="flex flex-col items-center p-2">
-              <Gift className="w-5 h-5 text-gray-600" />
-              <span className="text-xs mt-1">Offers</span>
-            </Link>
             
             <Link href="/dashboard/withdraw" className="flex flex-col items-center p-2">
               <Wallet className="w-5 h-5 text-gray-600" />
