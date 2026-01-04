@@ -26,9 +26,15 @@ export default function DashboardPreview() {
               </div>
               
               <div className="flex items-start space-x-4">
-                <div className="w-12 h-12 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
+
+              <img 
+               src='/images/earnko-logo-round.png'
+               alt='earnko logo'
+               className='w-[40px]'
+               />
+                {/* <div className="w-12 h-12 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
                   <TrendingUp className="w-5 h-5 text-green-600" />
-                </div>
+                </div> */}
                 <div>
                   <h4 className="font-bold text-gray-900 text-lg">Performance Analytics</h4>
                   <p className="text-gray-600 mt-1">Detailed reports and insights to optimize your affiliate strategy</p>

@@ -1,13 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'react-hot-toast'
 import StoreForm from '../../../../../components/admin/StoreForm'
-import {
-  ArrowLeft, Store, Save, Loader2, AlertCircle, Shield,
-  Globe, Tag, Settings, Package
-} from 'lucide-react'
+import { ArrowLeft, Store, Save, Loader2, AlertCircle, Shield, Tag } from 'lucide-react'
 
 export default function AdminStoreEditPage() {
   const { id } = useParams()
@@ -15,45 +12,70 @@ export default function AdminStoreEditPage() {
   const [loading, setLoading] = useState(true)
   const [item, setItem] = useState(null)
   const [saving, setSaving] = useState(false)
-  const [storeStats, setStoreStats] = useState({
-    totalProducts: 0,
-    totalTransactions: 0,
-    totalCommission: 0,
-    activeOffers: 0
+  const [stats, setStats] = useState({
+    clicksTotal: 0,
+    transactions: 0,
+    commissionTotal: 0,
+    pendingAmount: 0,
   })
+  const envWarned = useRef(false)
+
+  const getBase = () => process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getHeaders = () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    return { Authorization: token ? `Bearer ${token}` : '' }
+  }
+  const ensureEnvConfigured = () => {
+    const base = getBase()
+    if (!base && !envWarned.current) {
+      envWarned.current = true
+      toast.error('Backend URL not configured. Set NEXT_PUBLIC_BACKEND_URL')
+    }
+  }
+  const handleHttpError = async (res) => {
+    let message = 'Request failed'
+    try {
+      const js = await res.clone().json()
+      if (js?.message) message = js.message
+    } catch {}
+    if (res.status === 401) message = 'Unauthorized. Please login again.'
+    if (res.status === 403) message = 'Forbidden. Admin access required.'
+    throw new Error(message)
+  }
 
   useEffect(() => {
     if (!id) return
     const controller = new AbortController()
     async function load() {
       try {
+        ensureEnvConfigured()
         setLoading(true)
-        const token = localStorage.getItem('token')
-        
+        const base = getBase()
+
         // Load store details
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/stores/${id}`, {
+        const res = await fetch(`${base}/api/admin/stores/${id}`, {
           signal: controller.signal,
-          headers: { Authorization: token ? `Bearer ${token}` : '' }
+          headers: getHeaders(),
         })
+        if (!res.ok) await handleHttpError(res)
         const data = await res.json()
-        if (!res.ok) throw new Error(data?.message || 'Failed to load store')
         setItem(data?.data?.item || null)
 
-        // Load store statistics
-        const statsRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/stores/${id}/stats`, {
+        // Load store statistics (backend contract)
+        const statsRes = await fetch(`${base}/api/admin/stores/${id}/stats`, {
           signal: controller.signal,
-          headers: { Authorization: token ? `Bearer ${token}` : '' }
+          headers: getHeaders(),
         })
         if (statsRes.ok) {
           const statsData = await statsRes.json()
-          setStoreStats(statsData.data || {
-            totalProducts: 0,
-            totalTransactions: 0,
-            totalCommission: 0,
-            activeOffers: 0
+          const s = statsData?.data || {}
+          setStats({
+            clicksTotal: Number(s.clicksTotal || 0),
+            transactions: Number(s.transactions || 0),
+            commissionTotal: Number(s.commissionTotal || 0),
+            pendingAmount: Number(s.pendingAmount || 0),
           })
         }
-
       } catch (err) {
         if (err.name !== 'AbortError') {
           toast.error(err.message || 'Error loading store details')
@@ -64,23 +86,26 @@ export default function AdminStoreEditPage() {
     }
     load()
     return () => controller.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   const handleSubmit = async (payload) => {
     try {
+      ensureEnvConfigured()
       setSaving(true)
-      const token = localStorage.getItem('token')
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/stores/${id}`, {
+      const base = getBase()
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+      const res = await fetch(`${base}/api/admin/stores/${id}`, {
         method: 'PATCH',
-        headers: { 
-          'Content-Type': 'application/json', 
-          Authorization: token ? `Bearer ${token}` : '' 
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.message || 'Failed to update store')
-      
+      if (!res.ok) await handleHttpError(res)
+      await res.json()
+
       toast.success('Store updated successfully!')
       router.push('/admin/stores')
     } catch (err) {
@@ -151,65 +176,33 @@ export default function AdminStoreEditPage() {
               <p className="text-gray-600 text-sm mt-1">Update store details and configuration</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push(`/admin/stores/${id}/preview`)}
-              className="px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Preview
-            </button>
-          </div>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
-          {/* Left Column - Store Stats */}
+          {/* Left Column - Store Stats (aligned with backend fields) */}
           <div className="lg:col-span-1 space-y-6">
-            {/* Store Stats */}
             <div className="bg-white border border-gray-200 rounded-xl p-6">
               <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <Package className="w-5 h-5 text-gray-700" />
+                <Tag className="w-5 h-5 text-gray-700" />
                 Store Statistics
               </h3>
-              
+
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
-                      <Package className="w-4 h-4 text-blue-600" />
-                    </div>
-                    <span className="text-sm text-gray-600">Total Products</span>
-                  </div>
-                  <span className="text-sm font-bold text-gray-900">{storeStats.totalProducts}</span>
+                  <span className="text-sm text-gray-600">Total Clicks</span>
+                  <span className="text-sm font-bold text-gray-900">{stats.clicksTotal}</span>
                 </div>
-                
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
-                      <Store className="w-4 h-4 text-green-600" />
-                    </div>
-                    <span className="text-sm text-gray-600">Active Offers</span>
-                  </div>
-                  <span className="text-sm font-bold text-green-600">{storeStats.activeOffers}</span>
+                  <span className="text-sm text-gray-600">Transactions</span>
+                  <span className="text-sm font-bold text-gray-900">{stats.transactions}</span>
                 </div>
-                
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
-                      <Tag className="w-4 h-4 text-purple-600" />
-                    </div>
-                    <span className="text-sm text-gray-600">Total Transactions</span>
-                  </div>
-                  <span className="text-sm font-bold text-gray-900">{storeStats.totalTransactions}</span>
+                  <span className="text-sm text-gray-600">Commission Total</span>
+                  <span className="text-sm font-bold text-gray-900">₹{stats.commissionTotal}</span>
                 </div>
-                
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
-                      <Tag className="w-4 h-4 text-amber-600" />
-                    </div>
-                    <span className="text-sm text-gray-600">Total Commission</span>
-                  </div>
-                  <span className="text-sm font-bold text-gray-900">₹{storeStats.totalCommission}</span>
+                  <span className="text-sm text-gray-600">Pending Amount</span>
+                  <span className="text-sm font-bold text-gray-900">₹{stats.pendingAmount}</span>
                 </div>
               </div>
             </div>
@@ -217,69 +210,38 @@ export default function AdminStoreEditPage() {
             {/* Store Information */}
             <div className="bg-white border border-gray-200 rounded-xl p-6">
               <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <Settings className="w-5 h-5 text-gray-700" />
+                <Shield className="w-5 h-5 text-gray-700" />
                 Store Information
               </h3>
-              
+
               <div className="space-y-3">
                 <div>
                   <div className="text-xs text-gray-500">Store ID</div>
                   <div className="text-sm font-mono text-gray-900 truncate">{item._id}</div>
                 </div>
-                
+
                 <div>
                   <div className="text-xs text-gray-500">Created</div>
                   <div className="text-sm text-gray-900">
                     {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}
                   </div>
                 </div>
-                
+
                 <div>
                   <div className="text-xs text-gray-500">Last Updated</div>
                   <div className="text-sm text-gray-900">
                     {item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : 'N/A'}
                   </div>
                 </div>
-                
+
                 <div>
                   <div className="text-xs text-gray-500">Status</div>
                   <div className={`text-xs px-2 py-1 rounded-full inline-block ${
-                    item.status === 'active' ? 'bg-green-100 text-green-600' :
-                    item.status === 'inactive' ? 'bg-gray-100 text-gray-600' :
-                    'bg-red-100 text-red-600'
+                    item.isActive ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'
                   }`}>
-                    {item.status || 'Unknown'}
+                    {item.isActive ? 'Active' : 'Inactive'}
                   </div>
                 </div>
-              </div>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6">
-              <h3 className="font-bold text-gray-900 mb-4">Quick Actions</h3>
-              
-              <div className="space-y-3">
-                <a 
-                  href={`/admin/stores/${id}/products`}
-                  className="w-full py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Package className="w-4 h-4" />
-                  Manage Products
-                </a>
-                <a 
-                  href={`/admin/stores/${id}/offers`}
-                  className="w-full py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Tag className="w-4 h-4" />
-                  Manage Offers
-                </a>
-                <a 
-                  href={`/admin/stores/${id}/analytics`}
-                  className="w-full py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Globe className="w-4 h-4" />
-                  View Analytics
-                </a>
               </div>
             </div>
           </div>
@@ -287,7 +249,6 @@ export default function AdminStoreEditPage() {
           {/* Right Column - Edit Form */}
           <div className="lg:col-span-2">
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              {/* Form Header */}
               <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
                 <div className="flex items-center gap-3 mb-2">
                   <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
@@ -295,83 +256,65 @@ export default function AdminStoreEditPage() {
                   </div>
                   <div>
                     <h2 className="text-lg font-bold text-gray-900">{item.name || 'Store'}</h2>
-                    <div className="text-sm text-gray-600">{item.description?.substring(0, 100)}...</div>
                   </div>
                 </div>
                 <div className="text-sm text-gray-500">
-                  Update store details below. All changes are saved immediately upon submission.
+                  Update store details below. Changes save on submit.
                 </div>
               </div>
 
-              {/* Form Content */}
               <div className="p-6">
-                <StoreForm 
-                  initial={item} 
-                  onSubmit={handleSubmit} 
-                  submitting={saving} 
-                />
+                <StoreForm initial={item} onSubmit={handleSubmit} submitting={saving} />
               </div>
 
-              {/* Form Footer */}
               <div className="p-6 border-t border-gray-200 bg-gray-50">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <Shield className="w-4 h-4" />
-                    <span>All store data is secured and backed up</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => router.push('/admin/stores')}
-                      className="px-6 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-100 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      form="store-form"
-                      disabled={saving}
-                      className="px-6 py-2.5 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    >
-                      {saving ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Saving...
-                        </>
-                      ) : (
-                        <>
-                          <Save className="w-4 h-4" />
-                          Save Changes
-                        </>
-                      )}
-                    </button>
-                  </div>
+                <div className="flex items-center justify-end gap-3">
+                  <button
+                    onClick={() => router.push('/admin/stores')}
+                    className="px-6 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    form="store-form"
+                    disabled={saving}
+                    className="px-6 py-2.5 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Save Changes
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Important Notes */}
-            <div className="mt-6 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-6">
+            <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-6">
               <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
                 <AlertCircle className="w-5 h-5 text-blue-600" />
                 Important Notes
               </h3>
-              
+
               <ul className="space-y-2 text-sm text-gray-700">
-                <li className="flex items-start gap-2">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5"></div>
-                  <span>Store name and URL changes may affect existing affiliate links</span>
-                </li>
                 <li className="flex items-start gap-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5"></div>
                   <span>Commission rate changes apply to new transactions only</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5"></div>
-                  <span>Store status changes may take a few minutes to reflect</span>
+                  <span>Store activation may take a few minutes to reflect</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5"></div>
-                  <span>Always verify store URLs before saving changes</span>
+                  <span>Verify store URLs before saving changes</span>
                 </li>
               </ul>
             </div>

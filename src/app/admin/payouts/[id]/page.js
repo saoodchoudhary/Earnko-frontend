@@ -7,7 +7,7 @@ import { toast } from 'react-hot-toast'
 import {
   ArrowLeft, CreditCard, User, Calendar, DollarSign, 
   CheckCircle, Clock, XCircle, AlertCircle, ExternalLink,
-  TrendingUp, Users, Link as LinkIcon, Store, RefreshCw,
+  TrendingUp, Link as LinkIcon, Store, RefreshCw,
   FileText, Shield, Download, Copy, Check
 } from 'lucide-react'
 
@@ -26,33 +26,56 @@ export default function AdminPayoutDetailPage() {
   const [copied, setCopied] = useState(false)
 
   const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null)
 
-  const load = async (signal) => {
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      try { return await res.json() } catch { return null }
+    }
+    const txt = await res.text().catch(() => '')
+    return { success: false, message: txt }
+  }
+
+  const load = async () => {
     try {
+      if (!base) {
+        toast.error('NEXT_PUBLIC_BACKEND_URL not set')
+        setPayout(null)
+        return
+      }
       setLoading(true)
-      const token = localStorage.getItem('token')
+      const token = getToken()
       const res = await fetch(`${base}/api/admin/payouts/${id}`, {
-        signal,
         headers: { Authorization: token ? `Bearer ${token}` : '' }
       })
-      const js = await res.json()
-      if (!res.ok) throw new Error(js?.message || 'Failed to load payout')
+      const js = await safeJson(res)
+      if (!res.ok) {
+        const msg = js?.message || `Failed to load payout (HTTP ${res.status})`
+        if ((js?.message || '').startsWith('<!DOCTYPE') || (js?.message || '').includes('<html')) {
+          toast.error('Received HTML from API. Check backend URL.')
+        } else {
+          toast.error(msg)
+        }
+        setPayout(null)
+        return
+      }
       setPayout(js?.data?.payout || null)
-      setPerf(js?.data?.linkPerformance || [])
-      setReferrals(js?.data?.referrals || [])
+      setPerf(Array.isArray(js?.data?.linkPerformance) ? js.data.linkPerformance : [])
+      setReferrals(Array.isArray(js?.data?.referrals) ? js.data.referrals : [])
       setRefEarn(Number(js?.data?.referralEarnings || 0))
       setStatus(js?.data?.payout?.status || 'pending')
     } catch (err) {
-      if (err.name !== 'AbortError') toast.error(err.message || 'Error loading payout details')
+      toast.error(err.message || 'Error loading payout details')
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    const controller = new AbortController()
-    load(controller.signal)
-    return () => controller.abort()
+    if (!id) return
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   const updateStatus = async () => {
@@ -60,10 +83,13 @@ export default function AdminPayoutDetailPage() {
       toast.error('Please select a different status')
       return
     }
-
     try {
+      if (!base) {
+        toast.error('NEXT_PUBLIC_BACKEND_URL not set')
+        return
+      }
       setSaving(true)
-      const token = localStorage.getItem('token')
+      const token = getToken()
       const res = await fetch(`${base}/api/admin/payouts/${id}/status`, {
         method: 'PUT',
         headers: { 
@@ -76,10 +102,14 @@ export default function AdminPayoutDetailPage() {
           adminNotes: notes 
         })
       })
-      const js = await res.json()
-      if (!res.ok) throw new Error(js?.message || 'Failed to update payout status')
+      const js = await safeJson(res)
+      if (!res.ok) {
+        const msg = js?.message || `Failed to update payout status (HTTP ${res.status})`
+        toast.error(msg)
+        return
+      }
       toast.success('Payout status updated successfully')
-      load()
+      await load()
     } catch (err) {
       toast.error(err.message || 'Failed to update')
     } finally {
@@ -87,8 +117,8 @@ export default function AdminPayoutDetailPage() {
     }
   }
 
-  const getStatusIcon = (status) => {
-    switch(status) {
+  const getStatusIcon = (s) => {
+    switch(s) {
       case 'approved': return <CheckCircle className="w-4 h-4 text-green-500" />
       case 'processed': return <CheckCircle className="w-4 h-4 text-blue-500" />
       case 'rejected': return <XCircle className="w-4 h-4 text-red-500" />
@@ -96,8 +126,8 @@ export default function AdminPayoutDetailPage() {
     }
   }
 
-  const getStatusColor = (status) => {
-    switch(status) {
+  const getStatusColor = (s) => {
+    switch(s) {
       case 'approved': return 'bg-green-100 text-green-700'
       case 'processed': return 'bg-blue-100 text-blue-700'
       case 'rejected': return 'bg-red-100 text-red-700'
@@ -141,15 +171,15 @@ export default function AdminPayoutDetailPage() {
       <div className="bg-white border-b border-gray-200">
         <div className="container mx-auto px-4 py-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               <Link 
                 href="/admin/payouts" 
                 className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
               >
                 <ArrowLeft className="w-5 h-5 text-gray-600" />
               </Link>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Payout Details</h1>
+              <div className="min-w-0">
+                <h1 className="text-xl md:text-2xl font-bold text-gray-900 truncate">Payout Details</h1>
                 <p className="text-gray-600 text-sm mt-1">Manage and review payout information</p>
               </div>
             </div>
@@ -216,9 +246,9 @@ export default function AdminPayoutDetailPage() {
                     <div className="text-sm text-gray-500 mb-1">Affiliate</div>
                     <div className="flex items-center gap-2">
                       <User className="w-4 h-4 text-gray-600" />
-                      <div>
-                        <div className="font-medium text-gray-900">{payout.affiliate?.name || 'N/A'}</div>
-                        <div className="text-sm text-gray-600">{payout.affiliate?.email || 'N/A'}</div>
+                      <div className="min-w-0">
+                        <div className="font-medium text-gray-900 truncate">{payout.affiliate?.name || 'N/A'}</div>
+                        <div className="text-sm text-gray-600 truncate">{payout.affiliate?.email || 'N/A'}</div>
                       </div>
                     </div>
                   </div>
@@ -237,7 +267,7 @@ export default function AdminPayoutDetailPage() {
                     <div className="text-sm text-gray-500 mb-1">Payment Method</div>
                     <div className="font-medium text-gray-900">{payout.method?.toUpperCase() || 'N/A'}</div>
                     {payout.methodDetails && (
-                      <div className="text-sm text-gray-600 mt-1">
+                      <div className="text-sm text-gray-600 mt-1 break-words">
                         {payout.method === 'bank' ? 
                           `${payout.methodDetails?.bankName || ''} • ${payout.methodDetails?.accountNumber?.slice(-4) || ''}` :
                           payout.methodDetails?.upiId || ''
@@ -251,7 +281,7 @@ export default function AdminPayoutDetailPage() {
                     <div className="flex items-center gap-2">
                       <Calendar className="w-4 h-4 text-gray-600" />
                       <div className="font-medium text-gray-900">
-                        {new Date(payout.createdAt).toLocaleDateString()}
+                        {payout.createdAt ? new Date(payout.createdAt).toLocaleDateString() : '-'}
                       </div>
                     </div>
                   </div>
@@ -261,7 +291,7 @@ export default function AdminPayoutDetailPage() {
                   <div className="mt-6 pt-6 border-t border-gray-200">
                     <h3 className="text-sm font-medium text-gray-900 mb-3">Payment Details</h3>
                     <div className="bg-gray-50 rounded-lg p-4">
-                      <pre className="text-sm text-gray-700 whitespace-pre-wrap">
+                      <pre className="text-sm text-gray-700 whitespace-pre-wrap break-words">
                         {JSON.stringify(payout.methodDetails, null, 2)}
                       </pre>
                       <button
@@ -298,21 +328,21 @@ export default function AdminPayoutDetailPage() {
                         <tr>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Slug</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Store</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider text-right">Clicks</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider text-right">Conversions</th>
-                          <th className="px6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider text-right">Commission</th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Clicks</th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Conversions</th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Commission</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
                         {perf.map((row, index) => (
                           <tr key={row.slug || index} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm font-mono text-gray-900">{row.slug}</div>
+                              <div className="text-sm font-mono text-gray-900 break-all">{row.slug}</div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="flex items-center gap-2">
                                 <Store className="w-4 h-4 text-gray-600" />
-                                <span className="text-sm text-gray-900">{row.storeName}</span>
+                                <span className="text-sm text-gray-900 break-words">{row.storeName}</span>
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right">
@@ -380,7 +410,7 @@ export default function AdminPayoutDetailPage() {
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
                       placeholder="Add notes or remarks..."
-                      rows="3"
+                      rows={3}
                       className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-400 text-sm"
                     />
                   </div>
@@ -409,7 +439,7 @@ export default function AdminPayoutDetailPage() {
               <div className="bg-white border border-gray-200 rounded-xl p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-bold text-gray-900 flex items-center gap-2">
-                    <Users className="w-5 h-5 text-gray-600" />
+                    <User className="w-5 h-5 text-gray-600" />
                     Referrals
                   </h3>
                   <div className="text-sm font-bold text-green-600">
@@ -423,7 +453,7 @@ export default function AdminPayoutDetailPage() {
 
                 {referrals.length === 0 ? (
                   <div className="text-center py-4">
-                    <Users className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <User className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-gray-600">No referrals found</p>
                   </div>
                 ) : (

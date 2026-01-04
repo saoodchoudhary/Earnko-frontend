@@ -1,9 +1,8 @@
-// app/admin/page.js
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Activity, TrendingUp, Clock, IndianRupee, ArrowUpRight, ArrowDownRight,
+  Activity, Clock, ArrowUpRight, ArrowDownRight,
   Users, Store as StoreIcon, CreditCard, AlertCircle, DollarSign, BarChart3
 } from 'lucide-react'
 import {
@@ -23,21 +22,84 @@ export default function AdminDashboard() {
       try {
         setLoading(true)
         setError('')
+
         const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
-        const url = `${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/transactions/stats/overview?range=${range}`
-        const res = await fetch(url, {
-          signal: controller.signal,
-          headers: { Authorization: token ? `Bearer ${token}` : '' },
-        })
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
-          throw new Error(data?.message || 'Failed to load admin stats')
+        const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+        const headers = { Authorization: token ? `Bearer ${token}` : '' }
+
+        // Fetch all admin data in parallel (with graceful degradation)
+        const requests = [
+          fetch(`${base}/api/admin/transactions/stats/overview?range=${range}`, { signal: controller.signal, headers }),
+          fetch(`${base}/api/admin/transactions/stats/trend?range=${range}`, { signal: controller.signal, headers }),
+          fetch(`${base}/api/admin/transactions/top-stores?range=${range}&limit=5`, { signal: controller.signal, headers }),
+          fetch(`${base}/api/admin/transactions/recent?limit=10`, { signal: controller.signal, headers }),
+          fetch(`${base}/api/admin/users?limit=1`, { signal: controller.signal, headers }), // total users via total
+          fetch(`${base}/api/admin/users?status=active&limit=1`, { signal: controller.signal, headers }), // active users via total
+          fetch(`${base}/api/admin/stores?limit=1`, { signal: controller.signal, headers }).catch(() => null), // may not exist
+          fetch(`${base}/api/stores?limit=1`, { signal: controller.signal, headers }).catch(() => null), // public fallback
+          fetch(`${base}/api/admin/transactions?status=pending&limit=1`, { signal: controller.signal, headers }),
+          fetch(`${base}/api/admin/transactions?status=under_review&limit=1`, { signal: controller.signal, headers }),
+        ]
+
+        const [
+          rOverview, rTrend, rTopStores, rRecent,
+          rUsers, rActiveUsers, rAdminStores, rPublicStores,
+          rPending, rUnderReview
+        ] = await Promise.all(requests)
+
+        const [
+          jOverview, jTrend, jTopStores, jRecent,
+          jUsers, jActiveUsers, jAdminStores, jPublicStores,
+          jPending, jUnderReview
+        ] = await Promise.all([
+          rOverview?.json().catch(() => ({})),
+          rTrend?.json().catch(() => ({})),
+          rTopStores?.json().catch(() => ({})),
+          rRecent?.json().catch(() => ({})),
+          rUsers?.json().catch(() => ({})),
+          rActiveUsers?.json().catch(() => ({})),
+          rAdminStores ? rAdminStores.json().catch(() => ({})) : {},
+          rPublicStores ? rPublicStores.json().catch(() => ({})) : {},
+          rPending?.json().catch(() => ({})),
+          rUnderReview?.json().catch(() => ({})),
+        ])
+
+        const overview = jOverview?.data?.overview || {
+          totalTransactions: 0, totalCommission: 0, pendingAmount: 0
         }
-        const data = await res.json()
-        setStats(data?.data || null)
+
+        const trendDaily = jTrend?.data?.trend?.daily || []
+        const topStores = jTopStores?.data?.topStores || []
+        const recentTransactions = jRecent?.data?.recentTransactions || []
+
+        const totalUsers = Number(jUsers?.data?.total || 0)
+        const activeUsers = Number(jActiveUsers?.data?.total || 0)
+
+        // totalStores from admin route if present, else from public route
+        let totalStores = 0
+        if (jAdminStores?.data?.total) totalStores = Number(jAdminStores.data.total)
+        else if (jPublicStores?.data?.total) totalStores = Number(jPublicStores.data.total)
+        else if (Array.isArray(jPublicStores?.data?.stores)) totalStores = jPublicStores.data.stores.length
+
+        const pendingCount = Number(jPending?.data?.total || 0)
+        const underReviewCount = Number(jUnderReview?.data?.total || 0)
+        const pendingActions = pendingCount + underReviewCount
+
+        setStats({
+          overview,
+          trend: { daily: trendDaily },
+          topStores,
+          recentTransactions,
+          counts: {
+            totalUsers,
+            activeUsers,
+            totalStores,
+            pendingActions,
+          }
+        })
       } catch (err) {
         if (err.name !== 'AbortError') {
-          setError(err.message || 'Something went wrong')
+          setError(err.message || 'Failed to load admin data')
         }
       } finally {
         setLoading(false)
@@ -50,7 +112,7 @@ export default function AdminDashboard() {
 
   const overview = stats?.overview || {}
   const trend = useMemo(() => {
-    const series = stats?.trend?.daily || stats?.trend?.series || []
+    const series = stats?.trend?.daily || []
     return series.map(d => ({
       date: d.date || d.label,
       transactions: Number(d.transactions || d.count || 0),
@@ -59,15 +121,31 @@ export default function AdminDashboard() {
     }))
   }, [stats])
 
+  // Compute % deltas from last two days in trend
+  const { txDeltaPct, commissionDeltaPct } = useMemo(() => {
+    if (!trend || trend.length < 2) return { txDeltaPct: 0, commissionDeltaPct: 0 }
+    const last = trend[trend.length - 1]
+    const prev = trend[trend.length - 2]
+    const pct = (cur, prev) => {
+      const p = Number(prev || 0)
+      const c = Number(cur || 0)
+      if (p <= 0) return c > 0 ? 100 : 0
+      return ((c - p) / p) * 100
+    }
+    return {
+      txDeltaPct: Math.round(pct(last.transactions, prev.transactions) * 10) / 10,
+      commissionDeltaPct: Math.round(pct(last.commission, prev.commission) * 10) / 10,
+    }
+  }, [trend])
+
   const topStores = stats?.topStores || []
   const recentTransactions = stats?.recentTransactions || []
 
-  // Mock additional stats for admin panel
   const adminStats = {
-    totalUsers: overview.totalUsers || 1250,
-    activeUsers: overview.activeUsers || 890,
-    totalStores: overview.totalStores || 45,
-    pendingActions: overview.pendingActions || 12,
+    totalUsers: stats?.counts?.totalUsers || 0,
+    activeUsers: stats?.counts?.activeUsers || 0,
+    totalStores: stats?.counts?.totalStores || 0,
+    pendingActions: stats?.counts?.pendingActions || 0,
   }
 
   return (
@@ -102,7 +180,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Main Stats */}
+      {/* Main Stats (real data + real trend %) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
           title="Total Revenue"
@@ -110,21 +188,20 @@ export default function AdminDashboard() {
           prefix="₹"
           icon={<DollarSign className="w-5 h-5" />}
           color="from-gray-700 to-gray-900"
-          trend={Number(overview.deltaCommission || 0)}
+          trend={commissionDeltaPct}
         />
         <StatCard
           title="Total Transactions"
           value={overview.totalTransactions || 0}
           icon={<Activity className="w-5 h-5" />}
           color="from-blue-600 to-blue-800"
-          trend={Number(overview.deltaTransactions || 0)}
+          trend={txDeltaPct}
         />
         <StatCard
           title="Active Users"
           value={adminStats.activeUsers}
           icon={<Users className="w-5 h-5" />}
           color="from-green-600 to-green-800"
-          trend={8.5}
         />
         <StatCard
           title="Pending Actions"
@@ -148,12 +225,12 @@ export default function AdminDashboard() {
         />
         <MiniStat
           title="Pending Amount"
-          value={`₹${Math.round(overview.pendingAmount || 0)}`}
+          value={`₹${Math.round(overview.pendingAmount || 0).toLocaleString()}`}
           icon={<Clock className="w-4 h-4" />}
         />
         <MiniStat
           title="Available Balance"
-          value={`₹${Math.round(overview.availableBalance || 0)}`}
+          value={`₹${Math.round(overview.availableBalance || 0).toLocaleString()}`}
           icon={<CreditCard className="w-4 h-4" />}
         />
       </div>
@@ -197,15 +274,8 @@ export default function AdminDashboard() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                <XAxis 
-                  dataKey="date" 
-                  stroke="#6b7280"
-                  tick={{ fontSize: 12 }}
-                />
-                <YAxis 
-                  stroke="#6b7280"
-                  tick={{ fontSize: 12 }}
-                />
+                <XAxis dataKey="date" stroke="#6b7280" tick={{ fontSize: 12 }} />
+                <YAxis stroke="#6b7280" tick={{ fontSize: 12 }} />
                 <Tooltip
                   contentStyle={{
                     borderRadius: '8px',
@@ -277,13 +347,13 @@ export default function AdminDashboard() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                        tx.status === 'completed' ? 'bg-green-100' :
-                        tx.status === 'pending' ? 'bg-amber-100' :
+                        tx.status === 'confirmed' ? 'bg-green-100' :
+                        tx.status === 'pending' || tx.status === 'under_review' ? 'bg-amber-100' :
                         'bg-gray-100'
                       }`}>
                         <CreditCard className={`w-4 h-4 ${
-                          tx.status === 'completed' ? 'text-green-600' :
-                          tx.status === 'pending' ? 'text-amber-600' :
+                          tx.status === 'confirmed' ? 'text-green-600' :
+                          tx.status === 'pending' || tx.status === 'under_review' ? 'text-amber-600' :
                           'text-gray-600'
                         }`} />
                       </div>
@@ -298,11 +368,11 @@ export default function AdminDashboard() {
                     </div>
                     <div className="text-right">
                       <div className="text-sm font-bold text-gray-900">
-                        ₹{Number(tx.amount || 0).toFixed(0)}
+                        ₹{Number(tx.amount || tx.commissionAmount || 0).toFixed(0)}
                       </div>
                       <div className={`text-xs px-2 py-0.5 rounded-full inline-block ${
-                        tx.status === 'completed' ? 'bg-green-100 text-green-600' :
-                        tx.status === 'pending' ? 'bg-amber-100 text-amber-600' :
+                        tx.status === 'confirmed' ? 'bg-green-100 text-green-600' :
+                        tx.status === 'pending' || tx.status === 'under_review' ? 'bg-amber-100 text-amber-600' :
                         'bg-gray-100 text-gray-600'
                       }`}>
                         {tx.status || 'Unknown'}
@@ -349,7 +419,7 @@ export default function AdminDashboard() {
           ) : (
             <div className="divide-y divide-gray-200">
               {topStores.slice(0, 5).map((store, index) => (
-                <div key={store._id || store.storeId || index} className="p-4 hover:bg-gray-50 transition-colors">
+                <div key={store.storeId || store._id || index} className="p-4 hover:bg-gray-50 transition-colors">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
@@ -370,7 +440,7 @@ export default function AdminDashboard() {
                           {store.name || store.storeName || 'Store'}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {store.count || store.transactions || 0} transactions
+                          {store.transactions || store.count || 0} transactions
                         </div>
                       </div>
                     </div>
@@ -392,8 +462,8 @@ export default function AdminDashboard() {
 }
 
 function StatCard({ title, value, prefix = '', icon, color, trend }) {
-  const isPositive = trend > 0
-  const hasTrend = trend !== undefined
+  const hasTrend = typeof trend === 'number'
+  const isPositive = (trend || 0) >= 0
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-all">
@@ -406,12 +476,12 @@ function StatCard({ title, value, prefix = '', icon, color, trend }) {
             isPositive ? 'text-green-600' : 'text-red-600'
           }`}>
             {isPositive ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
-            {Math.abs(trend)}%
+            {Math.abs(Number(trend || 0)).toFixed(1)}%
           </div>
         )}
       </div>
       <div className="text-2xl font-bold text-gray-900">
-        {prefix}{typeof value === 'number' ? value.toLocaleString() : value}
+        {prefix}{typeof value === 'number' ? Number(value).toLocaleString() : value}
       </div>
       <div className="text-sm text-gray-500 mt-1">{title}</div>
     </div>

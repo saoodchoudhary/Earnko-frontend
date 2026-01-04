@@ -19,9 +19,15 @@ export default function Footer() {
           <div className="space-y-6">
             <div className="flex items-center gap-3">
               {/* Logo: gradient removed, solid background */}
-              <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center ring-1 ring-white/20 shadow-sm">
+              {/* <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center ring-1 ring-white/20 shadow-sm">
                 <TrendingUp className="w-6 h-6 text-[#0B1220]" />
-              </div>
+              </div> */}
+
+              <img 
+               src='/images/earnko-logo-round.png'
+               alt='earnko logo'
+               className='w-[40px]'
+               />
               <div>
                 <h2 className="text-xl font-bold tracking-tight">Earnko</h2>
                 <p className="text-sm text-gray-300">Affiliate Platform</p>
@@ -57,7 +63,7 @@ export default function Footer() {
             </h3>
             <ul className="space-y-3">
               <FooterLink href="/">Home</FooterLink>
-              <FooterLink href="/offers">Offers</FooterLink>
+              <FooterLink href="/stores">Stores</FooterLink>
               <FooterLink href="/login">Login</FooterLink>
               <FooterLink href="/register">Sign Up</FooterLink>
               <FooterLink href="/dashboard">Dashboard</FooterLink>
@@ -71,9 +77,9 @@ export default function Footer() {
             </h3>
             <ul className="space-y-3">
               <FooterLink href="/about">About Us</FooterLink>
-              <FooterLink href="/contact">Contact</FooterLink>
-              <FooterLink href="/blog">Blog</FooterLink>
-              <FooterLink href="/careers">Careers</FooterLink>
+              {/* <FooterLink href="/contact">Contact</FooterLink> */}
+              <FooterLink href="/privacy">Privacy Policy</FooterLink>
+              <FooterLink href="/terms">Terms & Conditions</FooterLink>
             </ul>
           </div>
 
@@ -121,9 +127,9 @@ export default function Footer() {
               <Link href="/terms" className="text-cyan-300 hover:text-white transition-colors">
                 Terms
               </Link>
-              <Link href="/cookies" className="text-cyan-300 hover:text-white transition-colors">
+              {/* <Link href="/cookies" className="text-cyan-300 hover:text-white transition-colors">
                 Cookies
-              </Link>
+              </Link> */}
             </div>
           </div>
         </div>

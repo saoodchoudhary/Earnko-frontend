@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import {
-  Search, Filter, Download, RefreshCw, ChevronRight, ChevronLeft,
-  Eye, MoreVertical, Calendar, FileText, CheckCircle, XCircle,
+  Search, Download, RefreshCw, ChevronRight, ChevronLeft,
+  Eye, MoreVertical, FileText, CheckCircle, XCircle,
   Clock, AlertCircle, DollarSign, CreditCard, Users, Store as StoreIcon
 } from 'lucide-react'
 
@@ -36,13 +36,28 @@ export default function AdminTransactionsPage() {
   const [selectedRows, setSelectedRows] = useState(new Set())
   const [bulkAction, setBulkAction] = useState('')
 
+  const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null)
   const totalPages = useMemo(() => Math.max(Math.ceil(total / limit), 1), [total, limit])
+
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      try { return await res.json() } catch { return null }
+    }
+    const txt = await res.text().catch(() => '')
+    return { success: false, message: txt }
+  }
 
   const loadData = async (showLoading = true) => {
     try {
+      if (!base) {
+        toast.error('NEXT_PUBLIC_BACKEND_URL not set')
+        setItems([]); setTotal(0); setSelectedRows(new Set())
+        return
+      }
       if (showLoading) setLoading(true)
-      const token = localStorage.getItem('token')
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      const token = getToken()
       const params = new URLSearchParams({ 
         page: String(page), 
         limit: String(limit) 
@@ -54,11 +69,20 @@ export default function AdminTransactionsPage() {
       const res = await fetch(`${base}/api/admin/transactions?${params.toString()}`, {
         headers: { Authorization: token ? `Bearer ${token}` : '' }
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.message || 'Failed to load transactions')
+      const data = await safeJson(res)
+      if (!res.ok) {
+        const msg = data?.message || `Failed to load transactions (HTTP ${res.status})`
+        if ((data?.message || '').startsWith('<!DOCTYPE') || (data?.message || '').includes('<html')) {
+          toast.error('Received HTML from API. Check backend URL.')
+        } else {
+          toast.error(msg)
+        }
+        setItems([]); setTotal(0); setSelectedRows(new Set())
+        return
+      }
 
-      setItems(data?.data?.items || [])
-      setTotal(data?.data?.total || 0)
+      setItems(Array.isArray(data?.data?.items) ? data.data.items : [])
+      setTotal(Number(data?.data?.total || 0))
       setSelectedRows(new Set()) // Clear selection on new load
     } catch (err) {
       toast.error(err.message || 'Error loading transactions')
@@ -69,12 +93,13 @@ export default function AdminTransactionsPage() {
 
   useEffect(() => {
     loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, status, range, page, limit])
 
   const updateStatus = async (id, nextStatus) => {
     try {
-      const token = localStorage.getItem('token')
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      if (!base) { toast.error('NEXT_PUBLIC_BACKEND_URL not set'); return }
+      const token = getToken()
       const res = await fetch(`${base}/api/admin/transactions/${id}/status`, {
         method: 'PATCH',
         headers: { 
@@ -83,13 +108,14 @@ export default function AdminTransactionsPage() {
         },
         body: JSON.stringify({ status: nextStatus })
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.message || 'Failed to update')
-      
+      const data = await safeJson(res)
+      if (!res.ok) {
+        const msg = data?.message || `Failed to update (HTTP ${res.status})`
+        toast.error(msg)
+        return
+      }
       toast.success('Status updated successfully')
-      
-      // Update local state
-      setItems(items.map(item => 
+      setItems(prev => prev.map(item => 
         item._id === id ? { ...item, status: nextStatus } : item
       ))
     } catch (err) {
@@ -104,8 +130,8 @@ export default function AdminTransactionsPage() {
     }
 
     try {
-      const token = localStorage.getItem('token')
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      if (!base) { toast.error('NEXT_PUBLIC_BACKEND_URL not set'); return }
+      const token = getToken()
       const res = await fetch(`${base}/api/admin/transactions/bulk-status`, {
         method: 'PATCH',
         headers: { 
@@ -118,8 +144,12 @@ export default function AdminTransactionsPage() {
         })
       })
       
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.message || 'Bulk update failed')
+      const data = await safeJson(res)
+      if (!res.ok) {
+        const msg = data?.message || `Bulk update failed (HTTP ${res.status})`
+        toast.error(msg)
+        return
+      }
       
       toast.success(`${selectedRows.size} transactions updated`)
       setSelectedRows(new Set())
@@ -149,29 +179,53 @@ export default function AdminTransactionsPage() {
   }
 
   const exportData = () => {
-    const dataStr = JSON.stringify(items, null, 2)
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr)
-    const exportFileDefaultName = `transactions-${new Date().toISOString().split('T')[0]}.json`
-    const linkElement = document.createElement('a')
-    linkElement.setAttribute('href', dataUri)
-    linkElement.setAttribute('download', exportFileDefaultName)
-    linkElement.click()
+    const rows = (Array.isArray(items) ? items : []).map(tx => ({
+      'Order ID': tx.orderId || '',
+      'Transaction ID': tx._id || '',
+      'User': tx.user?.email || tx.user?._id || '',
+      'Store': tx.store?.name || '',
+      'Amount (₹)': Number(tx.productAmount || 0),
+      'Commission (₹)': Number(tx.commissionAmount || 0),
+      'Status': tx.status || '',
+      'Date': tx.createdAt ? new Date(tx.createdAt).toLocaleString('en-IN') : ''
+    }))
+    const headers = Object.keys(rows[0] || {})
+    const csv = [
+      headers.join(','),
+      ...rows.map(row => headers.map(h => String(row[h]).replace(/,/g, ' ')).join(','))
+    ].join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `transactions-${new Date().toISOString().split('T')[0]}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
     toast.success('Data exported successfully')
   }
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    })
+    if (!dateString) return '-'
+    try {
+      return new Date(dateString).toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      })
+    } catch { return '-' }
   }
 
   const formatTime = (dateString) => {
-    return new Date(dateString).toLocaleTimeString('en-IN', {
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+    if (!dateString) return ''
+    try {
+      return new Date(dateString).toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    } catch { return '' }
   }
 
   return (
@@ -283,7 +337,7 @@ export default function AdminTransactionsPage() {
                 </select>
                 <button
                   onClick={handleBulkAction}
-                  className="px-4 py-2 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-900 transition-colors"
+                  className="px-4 py-2 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={!bulkAction}
                 >
                   Apply
@@ -306,7 +360,7 @@ export default function AdminTransactionsPage() {
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <h3 className="text-lg font-bold text-gray-900">All Transactions</h3>
           <div className="text-sm text-gray-600">
-            Showing {(page - 1) * limit + 1} - {Math.min(page * limit, total)} of {total} transactions
+            Showing {Math.min((page - 1) * limit + 1, total)} - {Math.min(page * limit, total)} of {total} transactions
           </div>
         </div>
 
@@ -346,7 +400,7 @@ export default function AdminTransactionsPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Amounts
                   </th>
-                  <th className="px6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -373,12 +427,12 @@ export default function AdminTransactionsPage() {
                         <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
                           <CreditCard className="w-5 h-5 text-gray-600" />
                         </div>
-                        <div>
-                          <div className="font-medium text-gray-900 font-mono">
-                            {tx.orderId?.substring(0, 12)}...
+                        <div className="min-w-0">
+                          <div className="font-medium text-gray-900 font-mono break-all">
+                            {tx.orderId || 'N/A'}
                           </div>
-                          <div className="text-xs text-gray-500">
-                            ID: {tx._id?.substring(0, 8)}...
+                          <div className="text-xs text-gray-500 break-all">
+                            ID: {tx._id || 'N/A'}
                           </div>
                         </div>
                       </div>
@@ -389,7 +443,7 @@ export default function AdminTransactionsPage() {
                           <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center">
                             <Users className="w-3 h-3 text-gray-600" />
                           </div>
-                          <div className="text-sm text-gray-900 truncate max-w-[150px]">
+                          <div className="text-sm text-gray-900 truncate max-w-[180px]">
                             {tx.user?.email || tx.user?._id || 'N/A'}
                           </div>
                         </div>
@@ -397,7 +451,7 @@ export default function AdminTransactionsPage() {
                           <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center">
                             <StoreIcon className="w-3 h-3 text-gray-600" />
                           </div>
-                          <div className="text-sm text-gray-600 truncate max-w-[150px]">
+                          <div className="text-sm text-gray-600 truncate max-w-[180px]">
                             {tx.store?.name || 'N/A'}
                           </div>
                         </div>
@@ -443,10 +497,10 @@ export default function AdminTransactionsPage() {
                           </select>
                           <ChevronRight className="w-4 h-4 text-gray-400 absolute right-2 top-1/2 transform -translate-y-1/2 rotate-90 pointer-events-none" />
                         </div>
-                        <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                        <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors" title="View">
                           <Eye className="w-4 h-4 text-gray-600" />
                         </button>
-                        <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
+                        <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors" title="More">
                           <MoreVertical className="w-4 h-4 text-gray-600" />
                         </button>
                       </div>
@@ -509,13 +563,13 @@ export default function AdminTransactionsPage() {
         <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
           <StatCard
             title="Total Amount"
-            value={`₹${items.reduce((sum, tx) => sum + (tx.productAmount || 0), 0).toLocaleString()}`}
+            value={`₹${items.reduce((sum, tx) => sum + Number(tx.productAmount || 0), 0).toLocaleString()}`}
             icon={<DollarSign className="w-5 h-5" />}
             color="bg-blue-100 text-blue-600"
           />
           <StatCard
             title="Total Commission"
-            value={`₹${items.reduce((sum, tx) => sum + (tx.commissionAmount || 0), 0).toLocaleString()}`}
+            value={`₹${items.reduce((sum, tx) => sum + Number(tx.commissionAmount || 0), 0).toLocaleString()}`}
             icon={<CreditCard className="w-5 h-5" />}
             color="bg-green-100 text-green-600"
           />
@@ -527,7 +581,7 @@ export default function AdminTransactionsPage() {
           />
           <StatCard
             title="Avg. Commission"
-            value={`₹${Math.round(items.reduce((sum, tx) => sum + (tx.commissionAmount || 0), 0) / items.length).toLocaleString()}`}
+            value={`₹${Math.round(items.reduce((sum, tx) => sum + Number(tx.commissionAmount || 0), 0) / items.length).toLocaleString()}`}
             icon={<AlertCircle className="w-5 h-5" />}
             color="bg-purple-100 text-purple-600"
           />
@@ -559,11 +613,12 @@ function StatusBadge({ status }) {
 }
 
 function StatCard({ title, value, icon, color }) {
+  const [bg, text] = color.split(' ')
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4">
       <div className="flex items-center justify-between mb-2">
-        <div className={`w-10 h-10 rounded-lg ${color.split(' ')[0]} flex items-center justify-center`}>
-          <div className={color.split(' ')[1]}>
+        <div className={`w-10 h-10 rounded-lg ${bg} flex items-center justify-center`}>
+          <div className={text}>
             {icon}
           </div>
         </div>

@@ -1,16 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import {
   Settings as SettingsIcon, Save, Globe, CreditCard, Users,
-  Shield, Database, RefreshCw, AlertCircle, CheckCircle,
-  DollarSign, Percent, Home, Link as LinkIcon
+  Database, RefreshCw, AlertCircle, Percent, Home,
+  DollarSign
 } from 'lucide-react'
 
 export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+
+  // Settings that are backed by the backend (/api/admin/settings)
   const [form, setForm] = useState({
     payoutMinAmount: { value: 100, group: 'payments', description: 'Minimum amount for withdrawal (₹)' },
     referralPercent: { value: 5, group: 'referral', description: 'Referral percentage (%)' },
@@ -23,69 +25,91 @@ export default function AdminSettingsPage() {
     defaultCommission: { value: 15, group: 'referral', description: 'Default Commission (%)' },
   })
 
-  const [additionalSettings, setAdditionalSettings] = useState({
-    maintenanceMode: false,
-    userRegistration: true,
-    emailNotifications: true,
-    smsNotifications: false,
-    autoApprovePayouts: false,
-  })
+  const envWarned = useRef(false)
+  const getBase = () => process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getHeaders = () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    return { Authorization: token ? `Bearer ${token}` : '' }
+  }
+  const ensureEnvConfigured = () => {
+    const base = getBase()
+    if (!base && !envWarned.current) {
+      envWarned.current = true
+      toast.error('Backend URL not configured. Set NEXT_PUBLIC_BACKEND_URL')
+    }
+  }
+  const handleHttpError = async (res) => {
+    let message = 'Request failed'
+    try {
+      const js = await res.clone().json()
+      if (js?.message) message = js.message
+    } catch {}
+    if (res.status === 401) message = 'Unauthorized. Please login again.'
+    if (res.status === 403) message = 'Forbidden. Admin access required.'
+    throw new Error(message)
+  }
 
   useEffect(() => {
     const controller = new AbortController()
     async function load() {
       try {
+        ensureEnvConfigured()
         setLoading(true)
-        const token = localStorage.getItem('token')
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/settings`, {
-          signal: controller.signal, 
-          headers: { Authorization: token ? `Bearer ${token}` : '' }
+        const base = getBase()
+        const res = await fetch(`${base}/api/admin/settings`, {
+          signal: controller.signal,
+          headers: getHeaders()
         })
+        if (!res.ok) await handleHttpError(res)
         const data = await res.json()
-        if (res.ok) {
-          const items = data?.data?.items || []
-          const next = { ...form }
+        const items = Array.isArray(data?.data?.items) ? data.data.items : []
+        // Merge backend values into current form; keep defaults for missing keys
+        setForm(prev => {
+          const next = { ...prev }
           for (const it of items) {
-            next[it.key] = { value: it.value, group: it.group, description: it.description }
+            if (!it?.key) continue
+            next[it.key] = {
+              value: it.value,
+              group: it.group || prev[it.key]?.group || 'general',
+              description: it.description || prev[it.key]?.description || ''
+            }
           }
-          setForm(next)
-        }
+          return next
+        })
       } catch (error) {
-        console.error('Error loading settings:', error)
-        toast.error('Failed to load settings')
-      } finally { 
-        setLoading(false) 
+        if (error.name !== 'AbortError') {
+          console.error('Error loading settings:', error)
+          toast.error(error.message || 'Failed to load settings')
+        }
+      } finally {
+        setLoading(false)
       }
     }
     load()
     return () => controller.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const change = (key, val) => setForm(prev => ({ 
-    ...prev, 
-    [key]: { ...prev[key], value: val } 
-  }))
-
-  const toggleSetting = (key) => setAdditionalSettings(prev => ({
+  const change = (key, val) => setForm(prev => ({
     ...prev,
-    [key]: !prev[key]
+    [key]: { ...prev[key], value: val }
   }))
 
   const submit = async (e) => {
     e.preventDefault()
     try {
+      ensureEnvConfigured()
       setSaving(true)
-      const token = localStorage.getItem('token')
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/settings`, {
+      const base = getBase()
+      const res = await fetch(`${base}/api/admin/settings`, {
         method: 'PATCH',
-        headers: { 
-          'Content-Type': 'application/json', 
-          Authorization: token ? `Bearer ${token}` : '' 
-        },
+        headers: { 'Content-Type': 'application/json', ...getHeaders() },
         body: JSON.stringify(form)
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.message || 'Failed to save settings')
+      if (!res.ok) await handleHttpError(res)
+      const js = await res.json()
+      const items = Array.isArray(js?.data?.items) ? js.data.items : []
+      if (items.length === 0) throw new Error('No settings updated')
       toast.success('Settings saved successfully')
     } catch (err) {
       toast.error(err.message || 'Failed to save settings')
@@ -95,7 +119,7 @@ export default function AdminSettingsPage() {
   }
 
   const resetDefaults = () => {
-    if (confirm('Are you sure you want to reset to default settings?')) {
+    if (confirm('Reset to default settings?')) {
       setForm({
         payoutMinAmount: { value: 100, group: 'payments', description: 'Minimum amount for withdrawal (₹)' },
         referralPercent: { value: 5, group: 'referral', description: 'Referral percentage (%)' },
@@ -143,57 +167,57 @@ export default function AdminSettingsPage() {
             {/* Left Column - Main Settings */}
             <div className="lg:col-span-2 space-y-6">
               {/* Platform Settings */}
-              <Section 
-                title="Platform Configuration" 
+              <Section
+                title="Platform Configuration"
                 icon={<Globe className="w-5 h-5" />}
                 description="Core platform URLs and email addresses"
               >
-                <Field 
+                <Field
                   label="Frontend URL"
                   icon={<Home className="w-4 h-4 text-gray-400" />}
                   description="Your frontend application URL"
                 >
-                  <input 
+                  <input
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400"
-                    value={form.frontendUrl?.value || ''} 
-                    onChange={(e) => change('frontendUrl', e.target.value)} 
+                    value={form.frontendUrl?.value || ''}
+                    onChange={(e) => change('frontendUrl', e.target.value)}
                     placeholder="https://earnko.com"
                   />
                 </Field>
-                <Field 
+                <Field
                   label="Backend URL"
                   icon={<Database className="w-4 h-4 text-gray-400" />}
                   description="Your backend API URL"
                 >
-                  <input 
+                  <input
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400"
-                    value={form.backendUrl?.value || ''} 
-                    onChange={(e) => change('backendUrl', e.target.value)} 
+                    value={form.backendUrl?.value || ''}
+                    onChange={(e) => change('backendUrl', e.target.value)}
                     placeholder="https://api.earnko.com"
                   />
                 </Field>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field 
+                  <Field
                     label="Admin Email"
                     icon={<SettingsIcon className="w-4 h-4 text-gray-400" />}
                   >
-                    <input 
+                    <input
                       type="email"
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400"
-                      value={form.adminEmail?.value || ''} 
-                      onChange={(e) => change('adminEmail', e.target.value)} 
+                      value={form.adminEmail?.value || ''}
+                      onChange={(e) => change('adminEmail', e.target.value)}
                       placeholder="admin@earnko.com"
                     />
                   </Field>
-                  <Field 
+                  <Field
                     label="Support Email"
                     icon={<Users className="w-4 h-4 text-gray-400" />}
                   >
-                    <input 
+                    <input
                       type="email"
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400"
-                      value={form.supportEmail?.value || ''} 
-                      onChange={(e) => change('supportEmail', e.target.value)} 
+                      value={form.supportEmail?.value || ''}
+                      onChange={(e) => change('supportEmail', e.target.value)}
                       placeholder="officialearnko@gmail.com"
                     />
                   </Field>
@@ -201,142 +225,100 @@ export default function AdminSettingsPage() {
               </Section>
 
               {/* Payment Settings */}
-              <Section 
-                title="Payment Settings" 
+              <Section
+                title="Payment Settings"
                 icon={<CreditCard className="w-5 h-5" />}
                 description="Withdrawal and payment configurations"
               >
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Field 
+                  <Field
                     label="Min. Withdrawal (₹)"
                     icon={<DollarSign className="w-4 h-4 text-gray-400" />}
                     description="Minimum withdrawal amount"
                   >
-                    <input 
+                    <input
                       type="number"
                       min="0"
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400"
-                      value={form.payoutMinAmount?.value ?? 100} 
-                      onChange={(e) => change('payoutMinAmount', Number(e.target.value))} 
+                      value={form.payoutMinAmount?.value ?? 100}
+                      onChange={(e) => change('payoutMinAmount', Number(e.target.value))}
                     />
                   </Field>
-                  <Field 
+                  <Field
                     label="Max. Withdrawal (₹)"
                     icon={<DollarSign className="w-4 h-4 text-gray-400" />}
                     description="Maximum withdrawal amount"
                   >
-                    <input 
+                    <input
                       type="number"
                       min="0"
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400"
-                      value={form.maxWithdrawal?.value ?? 50000} 
-                      onChange={(e) => change('maxWithdrawal', Number(e.target.value))} 
+                      value={form.maxWithdrawal?.value ?? 50000}
+                      onChange={(e) => change('maxWithdrawal', Number(e.target.value))}
                     />
                   </Field>
-                  <Field 
+                  <Field
                     label="Tax Percentage (%)"
                     icon={<Percent className="w-4 h-4 text-gray-400" />}
                     description="Tax deducted from earnings"
                   >
-                    <input 
+                    <input
                       type="number"
                       min="0"
                       max="100"
                       step="0.1"
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400"
-                      value={form.taxPercentage?.value ?? 18} 
-                      onChange={(e) => change('taxPercentage', Number(e.target.value))} 
+                      value={form.taxPercentage?.value ?? 18}
+                      onChange={(e) => change('taxPercentage', Number(e.target.value))}
                     />
                   </Field>
                 </div>
               </Section>
 
               {/* Referral & Commission Settings */}
-              <Section 
-                title="Referral & Commission" 
+              <Section
+                title="Referral & Commission"
                 icon={<Users className="w-5 h-5" />}
                 description="Referral and commission configurations"
               >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field 
+                  <Field
                     label="Referral Percentage (%)"
                     icon={<Percent className="w-4 h-4 text-gray-400" />}
                     description="Earnings from referred users"
                   >
-                    <input 
+                    <input
                       type="number"
                       min="0"
                       max="100"
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400"
-                      value={form.referralPercent?.value ?? 5} 
-                      onChange={(e) => change('referralPercent', Number(e.target.value))} 
+                      value={form.referralPercent?.value ?? 5}
+                      onChange={(e) => change('referralPercent', Number(e.target.value))}
                     />
                   </Field>
-                  <Field 
+                  <Field
                     label="Default Commission (%)"
                     icon={<Percent className="w-4 h-4 text-gray-400" />}
                     description="Default commission rate"
                   >
-                    <input 
+                    <input
                       type="number"
                       min="0"
                       max="100"
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400"
-                      value={form.defaultCommission?.value ?? 15} 
-                      onChange={(e) => change('defaultCommission', Number(e.target.value))} 
+                      value={form.defaultCommission?.value ?? 15}
+                      onChange={(e) => change('defaultCommission', Number(e.target.value))}
                     />
                   </Field>
                 </div>
               </Section>
             </div>
 
-            {/* Right Column - Additional Settings */}
+            {/* Right Column - Actions */}
             <div className="space-y-6">
-              {/* Toggle Settings */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6">
-                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <SettingsIcon className="w-5 h-5" />
-                  Platform Features
-                </h3>
-                
-                <div className="space-y-3">
-                  <ToggleSetting
-                    label="Maintenance Mode"
-                    description="Temporarily disable the platform"
-                    checked={additionalSettings.maintenanceMode}
-                    onChange={() => toggleSetting('maintenanceMode')}
-                  />
-                  <ToggleSetting
-                    label="User Registration"
-                    description="Allow new user registrations"
-                    checked={additionalSettings.userRegistration}
-                    onChange={() => toggleSetting('userRegistration')}
-                  />
-                  <ToggleSetting
-                    label="Email Notifications"
-                    description="Send email notifications to users"
-                    checked={additionalSettings.emailNotifications}
-                    onChange={() => toggleSetting('emailNotifications')}
-                  />
-                  <ToggleSetting
-                    label="SMS Notifications"
-                    description="Send SMS notifications"
-                    checked={additionalSettings.smsNotifications}
-                    onChange={() => toggleSetting('smsNotifications')}
-                  />
-                  <ToggleSetting
-                    label="Auto-approve Payouts"
-                    description="Automatically approve withdrawal requests"
-                    checked={additionalSettings.autoApprovePayouts}
-                    onChange={() => toggleSetting('autoApprovePayouts')}
-                  />
-                </div>
-              </div>
-
-              {/* Actions */}
               <div className="bg-white border border-gray-200 rounded-xl p-6">
                 <h3 className="font-bold text-gray-900 mb-4">Actions</h3>
-                
+
                 <div className="space-y-3">
                   <button
                     type="submit"
@@ -355,7 +337,7 @@ export default function AdminSettingsPage() {
                       </>
                     )}
                   </button>
-                  
+
                   <button
                     type="button"
                     onClick={resetDefaults}
@@ -366,7 +348,6 @@ export default function AdminSettingsPage() {
                   </button>
                 </div>
 
-                {/* Info Box */}
                 <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                   <div className="flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
@@ -376,7 +357,6 @@ export default function AdminSettingsPage() {
                   </div>
                 </div>
               </div>
-
             </div>
           </div>
         </form>
@@ -415,24 +395,6 @@ function Field({ label, icon, description, children }) {
         <div className="text-xs text-gray-500 mb-2">{description}</div>
       )}
       {children}
-    </div>
-  )
-}
-
-function ToggleSetting({ label, description, checked, onChange }) {
-  return (
-    <div className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors">
-      <div className="flex-1">
-        <div className="font-medium text-gray-900">{label}</div>
-        {description && <div className="text-xs text-gray-500 mt-1">{description}</div>}
-      </div>
-      <button
-        type="button"
-        onClick={onChange}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${checked ? 'bg-gray-800' : 'bg-gray-300'}`}
-      >
-        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
-      </button>
     </div>
   )
 }

@@ -6,15 +6,14 @@ import { toast } from 'react-hot-toast'
 import {
   CreditCard, Filter, Download, RefreshCw, CheckCircle, XCircle,
   Clock, AlertCircle, IndianRupee, MoreVertical, Eye, Search,
-  ChevronDown, Calendar, User, Wallet, TrendingUp
 } from 'lucide-react'
 
 const STATUS_OPTIONS = [
-  { value: '', label: 'All Status', icon: <Filter className="w-4 h-4" /> },
-  { value: 'pending', label: 'Pending', icon: <Clock className="w-4 h-4 text-amber-500" /> },
-  { value: 'approved', label: 'Approved', icon: <CheckCircle className="w-4 h-4 text-green-500" /> },
-  { value: 'processed', label: 'Processed', icon: <CheckCircle className="w-4 h-4 text-blue-500" /> },
-  { value: 'rejected', label: 'Rejected', icon: <XCircle className="w-4 h-4 text-red-500" /> },
+  { value: '', label: 'All Status' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'processed', label: 'Processed' },
+  { value: 'rejected', label: 'Rejected' },
 ]
 
 export default function AdminPayoutsPage() {
@@ -32,24 +31,49 @@ export default function AdminPayoutsPage() {
     rejected: 0
   })
 
+  const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null)
+
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      try { return await res.json() } catch { return null }
+    }
+    const txt = await res.text().catch(() => '')
+    return { success: false, message: txt }
+  }
+
   const loadData = async (showLoading = true) => {
     try {
+      if (!base) {
+        toast.error('NEXT_PUBLIC_BACKEND_URL not set')
+        setItems([])
+        return
+      }
       if (showLoading) setLoading(true)
-      const token = localStorage.getItem('token')
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      const token = getToken()
       const params = new URLSearchParams()
       if (status) params.set('status', status)
 
       const res = await fetch(`${base}/api/admin/payouts?${params.toString()}`, {
         headers: { Authorization: token ? `Bearer ${token}` : '' }
       })
-      const js = await res.json()
-      if (!res.ok) throw new Error(js?.message || 'Failed to load payouts')
+      const js = await safeJson(res)
+      if (!res.ok) {
+        const msg = js?.message || `Failed to load payouts (HTTP ${res.status})`
+        if ((js?.message || '').startsWith('<!DOCTYPE') || (js?.message || '').includes('<html')) {
+          toast.error('Received HTML from API. Check backend URL.')
+        } else {
+          toast.error(msg)
+        }
+        setItems([])
+        setStats({ total: 0, pending: 0, approved: 0, processed: 0, rejected: 0 })
+        return
+      }
       
       const payouts = js?.data?.payouts || []
       setItems(payouts)
 
-      // Calculate stats
       const statsData = {
         total: payouts.length,
         pending: payouts.filter(p => p.status === 'pending').length,
@@ -69,13 +93,17 @@ export default function AdminPayoutsPage() {
 
   useEffect(() => {
     loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status])
 
   const updateStatus = async (id, nextStatus) => {
     try {
+      if (!base) {
+        toast.error('NEXT_PUBLIC_BACKEND_URL not set')
+        return
+      }
       setBusyId(id)
-      const token = localStorage.getItem('token')
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      const token = getToken()
       const res = await fetch(`${base}/api/admin/payouts/${id}/status`, {
         method: 'PUT',
         headers: { 
@@ -84,11 +112,15 @@ export default function AdminPayoutsPage() {
         },
         body: JSON.stringify({ status: nextStatus })
       })
-      const js = await res.json()
-      if (!res.ok) throw new Error(js?.message || 'Failed to update')
+      const js = await safeJson(res)
+      if (!res.ok) {
+        const msg = js?.message || `Failed to update (HTTP ${res.status})`
+        toast.error(msg)
+        return
+      }
       
       toast.success(`Payout ${nextStatus} successfully`)
-      await loadData(false) // Reload data without showing loading
+      await loadData(false)
     } catch (err) {
       toast.error(err.message || 'Failed to update')
     } finally {
@@ -137,9 +169,9 @@ export default function AdminPayoutsPage() {
       {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Payout Management</h1>
-            <p className="text-gray-600 mt-1">Manage and process affiliate payouts</p>
+          <div className="min-w-0">
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 truncate">Payout Management</h1>
+            <p className="text-gray-600 mt-1 text-sm">Manage and process affiliate payouts</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -175,7 +207,7 @@ export default function AdminPayoutsPage() {
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="search"
                 placeholder="Search by name, email or ID..."
@@ -199,8 +231,8 @@ export default function AdminPayoutsPage() {
         </div>
       </div>
 
-      {/* Payouts Table */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      {/* Payouts Table (desktop) */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden hidden md:block">
         <div className="overflow-x-auto">
           <table className="min-w-full">
             <thead className="bg-gray-50">
@@ -241,13 +273,15 @@ export default function AdminPayoutsPage() {
                     <Td>
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                          <User className="w-4 h-4 text-gray-600" />
+                          <span className="text-xs font-semibold text-gray-700">
+                            {(payout.affiliate?.name || 'U').charAt(0).toUpperCase()}
+                          </span>
                         </div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-gray-900 truncate">
                             {payout.affiliate?.name || 'Unknown User'}
                           </div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-500 truncate">
                             {payout.affiliate?.email || 'No email'}
                           </div>
                         </div>
@@ -353,7 +387,7 @@ export default function AdminPayoutsPage() {
         </div>
 
         {/* Table Footer */}
-        {filteredItems.length > 0 && (
+        {!loading && filteredItems.length > 0 && (
           <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
             <div className="flex items-center justify-between">
               <div className="text-sm text-gray-500">
@@ -366,6 +400,94 @@ export default function AdminPayoutsPage() {
               </div>
             </div>
           </div>
+        )}
+      </div>
+
+      {/* Mobile list view */}
+      <div className="md:hidden space-y-3">
+        {loading ? (
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="w-10 h-10 border-4 border-gray-200 border-t-gray-800 rounded-full animate-spin mx-auto"></div>
+            <div className="text-center text-gray-600 mt-3">Loading payouts...</div>
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="bg-white border border-gray-200 rounded-xl p-4 text-center">
+            <CreditCard className="w-10 h-10 text-gray-400 mx-auto mb-2" />
+            <div className="text-gray-600">No payouts found</div>
+          </div>
+        ) : (
+          filteredItems.map(payout => (
+            <div key={payout._id} className="bg-white border border-gray-200 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                    <span className="text-xs font-semibold text-gray-700">
+                      {(payout.affiliate?.name || 'U').charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-gray-900 truncate">
+                      {payout.affiliate?.name || 'Unknown User'}
+                    </div>
+                    <div className="text-xs text-gray-500 truncate">
+                      {payout.affiliate?.email || 'No email'}
+                    </div>
+                  </div>
+                </div>
+                <div className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(payout.status)}`}>
+                  {payout.status?.charAt(0).toUpperCase() + payout.status?.slice(1)}
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center justify-between">
+                <div className="flex items-center gap-1 text-sm">
+                  <IndianRupee className="w-4 h-4 text-gray-500" />
+                  <span className="font-bold text-gray-900">{Number(payout.amount || 0).toLocaleString()}</span>
+                </div>
+                <div className="text-xs text-gray-500">
+                  {payout.createdAt ? new Date(payout.createdAt).toLocaleDateString() : '-'}
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center justify-between">
+                <Link
+                  href={`/admin/payouts/${payout._id}`}
+                  className="px-3 py-2 bg-gray-800 text-white rounded-lg text-sm hover:bg-gray-900"
+                >
+                  View
+                </Link>
+                <div className="flex items-center gap-2">
+                  {payout.status !== 'approved' && payout.status !== 'processed' && (
+                    <button
+                      onClick={() => updateStatus(payout._id, 'approved')}
+                      disabled={busyId === payout._id}
+                      className="px-3 py-2 text-sm text-green-700 border border-green-200 rounded-lg hover:bg-green-50 disabled:opacity-50"
+                    >
+                      Approve
+                    </button>
+                  )}
+                  {payout.status !== 'processed' && payout.status !== 'rejected' && (
+                    <button
+                      onClick={() => updateStatus(payout._id, 'processed')}
+                      disabled={busyId === payout._id}
+                      className="px-3 py-2 text-sm text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 disabled:opacity-50"
+                    >
+                      Processed
+                    </button>
+                  )}
+                  {payout.status !== 'rejected' && (
+                    <button
+                      onClick={() => updateStatus(payout._id, 'rejected')}
+                      disabled={busyId === payout._id}
+                      className="px-3 py-2 text-sm text-red-700 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50"
+                    >
+                      Reject
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))
         )}
       </div>
     </div>

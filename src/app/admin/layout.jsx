@@ -1,6 +1,5 @@
-// app/admin/layout.js
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { useSelector, useDispatch } from 'react-redux'
@@ -8,8 +7,7 @@ import { logout } from '@/store/slices/authSlice'
 import { 
   Grid, ClipboardList, DollarSign, CreditCard, Users, LogOut, 
   Store as StoreIcon, Tag, MousePointer, Webhook, Settings as SettingsIcon,
-  Home, TrendingUp, Shield, BarChart3, AlertCircle, FileText,
-  ChevronRight, Menu, X, Bell, Search, User
+  Shield, AlertCircle, ChevronRight, Menu, X, Bell, Search, User, ArrowLeft, RefreshCw
 } from 'lucide-react'
 
 export default function AdminLayout({ children }) {
@@ -21,11 +19,30 @@ export default function AdminLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [user, setUser] = useState(null)
 
+  // Notifications
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [notifLoading, setNotifLoading] = useState(false)
+  const [notifications, setNotifications] = useState([])
+  const notifBtnRef = useRef(null)
+  const notifBoxRef = useRef(null)
+
+  const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null)
+
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      try { return await res.json() } catch { return null }
+    }
+    const txt = await res.text().catch(() => '')
+    return { success: false, message: txt }
+  }
+
   useEffect(() => {
     let mounted = true
     async function verify() {
       try {
-        const token = localStorage.getItem('token')
+        const token = getToken()
         if (!token) { 
           if (mounted) { 
             setAuthorized(false); 
@@ -34,11 +51,8 @@ export default function AdminLayout({ children }) {
           } 
           return 
         }
-        
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/auth/me`, { 
-          headers: { Authorization: `Bearer ${token}` } 
-        })
-        
+        const res = await fetch(`${base}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+        const data = await safeJson(res)
         if (!res.ok) {
           localStorage.removeItem('token'); 
           localStorage.removeItem('user')
@@ -49,8 +63,6 @@ export default function AdminLayout({ children }) {
           }
           return
         }
-        
-        const data = await res.json()
         const userData = data?.data?.user || data?.data || null
         if (!userData || userData.role !== 'admin') {
           localStorage.removeItem('token'); 
@@ -62,7 +74,6 @@ export default function AdminLayout({ children }) {
           }
           return
         }
-        
         if (mounted) { 
           localStorage.setItem('user', JSON.stringify(userData)); 
           setUser(userData);
@@ -81,7 +92,58 @@ export default function AdminLayout({ children }) {
     }
     verify()
     return () => { mounted = false }
-  }, [router, dispatch])
+  }, [router, dispatch, base])
+
+  // Load notifications when dropdown opens
+  const loadNotifications = async () => {
+    try {
+      setNotifLoading(true)
+      const token = getToken()
+      if (!base || !token) {
+        setNotifications([])
+        setNotifLoading(false)
+        return
+      }
+      const res = await fetch(`${base}/api/notifications?limit=20`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const data = await safeJson(res)
+      if (!res.ok) {
+        setNotifications([])
+        setNotifLoading(false)
+        return
+      }
+      const list = data?.data?.notifications || data?.data?.items || data?.notifications || data?.items || []
+      setNotifications(Array.isArray(list) ? list : [])
+    } catch {
+      setNotifications([])
+    } finally {
+      setNotifLoading(false)
+    }
+  }
+
+  // Toggle notif dropdown
+  const toggleNotif = () => {
+    setNotifOpen(prev => {
+      const next = !prev
+      if (next) loadNotifications()
+      return next
+    })
+  }
+
+  // Close notif on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (!notifOpen) return
+      const btn = notifBtnRef.current
+      const box = notifBoxRef.current
+      if (btn && btn.contains(e.target)) return
+      if (box && box.contains(e.target)) return
+      setNotifOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [notifOpen])
 
   const handleLogout = () => { 
     dispatch(logout()); 
@@ -124,7 +186,6 @@ export default function AdminLayout({ children }) {
       items: [
         { label: 'Webhooks', href: '/admin/webhooks', icon: <Webhook className="w-4 h-4" /> },
         { label: 'Settings', href: '/admin/settings', icon: <SettingsIcon className="w-4 h-4" /> },
-        // { label: 'Reports', href: '/admin/reports', icon: <FileText className="w-4 h-4" /> },
       ]
     },
   ]
@@ -133,6 +194,10 @@ export default function AdminLayout({ children }) {
     if (href === '/admin') return pathname === '/admin'
     return pathname.startsWith(href)
   }
+
+  const unreadCount = (Array.isArray(notifications) ? notifications : []).filter(n =>
+    n.read === false || n.isRead === false || n.status === 'unread'
+  ).length
 
   if (loading) {
     return (
@@ -153,12 +218,23 @@ export default function AdminLayout({ children }) {
       <header className="lg:hidden bg-white border-b shadow-sm sticky top-0 z-40">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <button 
-              onClick={() => setSidebarOpen(true)} 
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-            >
-              <Menu className="w-5 h-5 text-gray-700" />
-            </button>
+            {pathname !== '/admin' ? (
+              <button 
+                onClick={() => router.back()} 
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                aria-label="Back"
+              >
+                <ArrowLeft className="w-5 h-5 text-gray-700" />
+              </button>
+            ) : (
+              <button 
+                onClick={() => setSidebarOpen(true)} 
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                aria-label="Menu"
+              >
+                <Menu className="w-5 h-5 text-gray-700" />
+              </button>
+            )}
             <Link href="/admin" className="flex items-center space-x-2">
               <div className="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center">
                 <Shield className="w-4 h-4 text-white" />
@@ -166,10 +242,63 @@ export default function AdminLayout({ children }) {
               <span className="text-lg font-bold text-gray-900">Admin</span>
             </Link>
           </div>
-          <div className="flex items-center space-x-2">
-            <button className="p-2">
+          <div className="relative flex items-center space-x-2">
+            <button
+              ref={notifBtnRef}
+              onClick={toggleNotif}
+              className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              aria-label="Notifications"
+            >
               <Bell className="w-5 h-5 text-gray-600" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
+                  {Math.min(unreadCount, 9)}
+                </span>
+              )}
             </button>
+            {/* Mobile notif dropdown */}
+            {notifOpen && (
+              <div
+                ref={notifBoxRef}
+                className="absolute right-0 top-full mt-2 w-80 max-w-[90vw] bg-white border border-gray-200 rounded-lg shadow-lg z-50"
+              >
+                <div className="px-3 py-2 border-b flex items-center justify-between">
+                  <div className="text-sm font-semibold text-gray-900">Notifications</div>
+                  <button
+                    onClick={loadNotifications}
+                    className="p-1.5 rounded hover:bg-gray-100"
+                    title="Refresh"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${notifLoading ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+                <div className="max-h-64 overflow-y-auto">
+                  {notifLoading ? (
+                    <div className="p-3 space-y-2">
+                      {[...Array(3)].map((_, i) => (
+                        <div key={i} className="h-12 bg-gray-100 rounded animate-pulse" />
+                      ))}
+                    </div>
+                  ) : notifications.length === 0 ? (
+                    <div className="p-4 text-center text-sm text-gray-600">No notifications</div>
+                  ) : (
+                    notifications.map((n, i) => (
+                      <div key={n._id || i} className="px-3 py-2 border-b last:border-b-0 hover:bg-gray-50">
+                        <div className="text-sm font-medium text-gray-900 truncate">
+                          {n.title || n.subject || 'Notification'}
+                        </div>
+                        <div className="text-xs text-gray-600 truncate">
+                          {n.message || n.body || n.description || ''}
+                        </div>
+                        <div className="text-[11px] text-gray-400 mt-0.5">
+                          {n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -268,6 +397,7 @@ export default function AdminLayout({ children }) {
             <button 
               onClick={() => setSidebarOpen(false)} 
               className="p-2 rounded-lg hover:bg-gray-100"
+              aria-label="Close menu"
             >
               <X className="w-5 h-5 text-gray-600" />
             </button>
@@ -316,14 +446,14 @@ export default function AdminLayout({ children }) {
       {/* Main Content */}
       <div className="lg:pl-64">
         {/* Desktop Header */}
-        <header className="hidden lg:block bg-white border-b border-gray-200">
+        <header className="hidden lg:block bg-white border-b border-gray-200 sticky top-0 z-30">
           <div className="px-6 py-3">
             <div className="flex items-center justify-between">
               {/* Breadcrumb */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <span className="text-sm font-medium text-gray-900">Admin</span>
                 <ChevronRight className="w-4 h-4 text-gray-400" />
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-gray-600 truncate max-w-[50vw]">
                   {pathname.split('/').pop()?.charAt(0).toUpperCase() + pathname.split('/').pop()?.slice(1) || 'Dashboard'}
                 </span>
               </div>
@@ -339,12 +469,64 @@ export default function AdminLayout({ children }) {
                   />
                 </div>
                 
-                <button className="relative p-2">
-                  <Bell className="w-5 h-5 text-gray-600" />
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
-                    3
-                  </span>
-                </button>
+                <div className="relative">
+                  <button
+                    ref={notifBtnRef}
+                    onClick={toggleNotif}
+                    className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                    aria-label="Notifications"
+                  >
+                    <Bell className="w-5 h-5 text-gray-600" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
+                        {Math.min(unreadCount, 99)}
+                      </span>
+                    )}
+                  </button>
+                  {/* Desktop notif dropdown */}
+                  {notifOpen && (
+                    <div
+                      ref={notifBoxRef}
+                      className="absolute right-0 mt-2 w-96 bg-white border border-gray-200 rounded-lg shadow-lg z-50"
+                    >
+                      <div className="px-4 py-2 border-b flex items-center justify-between">
+                        <div className="text-sm font-semibold text-gray-900">Notifications</div>
+                        <button
+                          onClick={loadNotifications}
+                          className="p-1.5 rounded hover:bg-gray-100"
+                          title="Refresh"
+                        >
+                          <RefreshCw className={`w-4 h-4 ${notifLoading ? 'animate-spin' : ''}`} />
+                        </button>
+                      </div>
+                      <div className="max-h-80 overflow-y-auto">
+                        {notifLoading ? (
+                          <div className="p-4 space-y-2">
+                            {[...Array(4)].map((_, i) => (
+                              <div key={i} className="h-12 bg-gray-100 rounded animate-pulse" />
+                            ))}
+                          </div>
+                        ) : notifications.length === 0 ? (
+                          <div className="p-4 text-center text-sm text-gray-600">No notifications</div>
+                        ) : (
+                          notifications.map((n, i) => (
+                            <div key={n._id || i} className="px-4 py-3 border-b last:border-b-0 hover:bg-gray-50">
+                              <div className="text-sm font-medium text-gray-900 truncate">
+                                {n.title || n.subject || 'Notification'}
+                              </div>
+                              <div className="text-xs text-gray-600 truncate">
+                                {n.message || n.body || n.description || ''}
+                              </div>
+                              <div className="text-[11px] text-gray-400 mt-0.5">
+                                {n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-full bg-gray-800 text-white flex items-center justify-center font-bold">
@@ -357,9 +539,9 @@ export default function AdminLayout({ children }) {
           </div>
         </header>
 
-        {/* Main Content Area */}
-        <main className="min-h-screen">
-          <div className="px-4 lg:px-6 py-6">
+        {/* Main Content Area with extra bottom padding to avoid overlapping bottom nav on mobile */}
+        <main className="min-h-screen pb-24 lg:pb-0" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          <div className="px-4 lg:px-6 py-6 mb-[60px] lg:mb-0">
             {children}
           </div>
         </main>

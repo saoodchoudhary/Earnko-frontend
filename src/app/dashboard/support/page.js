@@ -7,7 +7,7 @@ import {
   MessageSquare, HelpCircle, FileText, Clock,
   CheckCircle, AlertCircle, Send, Plus,
   Search, Filter, RefreshCw, Calendar,
-  User, Tag, ArrowUpRight, Phone, Mail
+  Mail
 } from 'lucide-react';
 
 export default function SupportPage() {
@@ -18,35 +18,60 @@ export default function SupportPage() {
   const [creating, setCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
-  const [faqs, setFaqs] = useState([
+  const [faqs] = useState([
     { question: 'How long does withdrawal take?', answer: 'Withdrawals are processed within 24-48 hours.' },
     { question: 'How do I generate affiliate links?', answer: 'Go to Create Link page and paste any product URL.' },
     { question: 'When are commissions credited?', answer: 'Commissions are credited after 30 days of conversion.' },
     { question: 'What is the minimum withdrawal amount?', answer: 'Minimum withdrawal amount is ₹500.' }
   ]);
 
-  const loadTickets = async (signal) => {
+  const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      try { return await res.json(); } catch { return null; }
+    }
+    const txt = await res.text().catch(() => '');
+    return { success: false, message: txt };
+  };
+
+  const loadTickets = async (signal, showLoading = true) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/support/tickets/me`, {
+      if (!token) {
+        if (typeof window !== 'undefined') window.location.href = '/login?next=/dashboard/support';
+        return;
+      }
+      const res = await fetch(`${base}/api/support/tickets/me`, {
         signal,
-        headers: { Authorization: token ? `Bearer ${token}` : '' }
+        headers: { Authorization: `Bearer ${token}` }
       });
-      const d = await res.json();
-      if (res.ok) setItems(d?.data?.items || []);
+      const d = await safeJson(res);
+      if (res.ok) {
+        const list = Array.isArray(d?.data?.items) ? d.data.items : [];
+        setItems(list);
+      } else {
+        toast.error(d?.message || 'Failed to load tickets');
+        setItems([]);
+      }
     } catch (error) {
-      console.error('Error loading tickets:', error);
+      if (error?.name !== 'AbortError') {
+        console.error('Error loading tickets:', error);
+        toast.error('Error loading tickets');
+      }
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
   useEffect(() => {
     const controller = new AbortController();
-    loadTickets(controller.signal);
+    if (base) loadTickets(controller.signal, true);
     return () => controller.abort();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base]);
 
   const submitTicket = async (e) => {
     e.preventDefault();
@@ -58,25 +83,28 @@ export default function SupportPage() {
     try {
       setCreating(true);
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/support/tickets`, {
+      if (!token) {
+        toast.error('Please login to create a ticket');
+        return;
+      }
+      const res = await fetch(`${base}/api/support/tickets`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          Authorization: token ? `Bearer ${token}` : '' 
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ 
-          subject: subject.trim(), 
-          message: message.trim(),
-          category: 'general'
+        body: JSON.stringify({
+          subject: subject.trim(),
+          message: message.trim()
         })
       });
-      
-      const d = await res.json();
+
+      const d = await safeJson(res);
       if (res.ok) {
         toast.success('Support ticket created successfully!');
         setSubject('');
         setMessage('');
-        await loadTickets();
+        await loadTickets(undefined, true);
       } else {
         toast.error(d?.message || 'Failed to create ticket');
       }
@@ -89,35 +117,42 @@ export default function SupportPage() {
 
   const refreshTickets = () => {
     const controller = new AbortController();
-    loadTickets(controller.signal);
+    loadTickets(controller.signal, true);
   };
 
-  const filteredTickets = items.filter(ticket => {
-    const matchesSearch = ticket.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         ticket.message?.toLowerCase().includes(searchQuery.toLowerCase());
-    
+  const filteredTickets = items.filter((ticket) => {
+    const q = searchQuery.trim().toLowerCase();
+    const matchesSearch =
+      q === '' ||
+      String(ticket.subject || '').toLowerCase().includes(q) ||
+      String(ticket.message || '').toLowerCase().includes(q);
+
+    const st = String(ticket.status || '').toLowerCase();
     if (activeFilter === 'all') return matchesSearch;
-    if (activeFilter === 'open') return matchesSearch && ticket.status === 'open';
-    if (activeFilter === 'closed') return matchesSearch && ticket.status === 'closed';
-    if (activeFilter === 'pending') return matchesSearch && ticket.status === 'pending';
-    
+    if (activeFilter === 'open') return matchesSearch && st === 'open';
+    if (activeFilter === 'closed') return matchesSearch && st === 'closed';
+    if (activeFilter === 'pending') return matchesSearch && (st === 'pending' || st === 'under_review');
     return matchesSearch;
   });
 
-  const getStatusColor = (status) => {
+  const getStatusColor = (statusRaw) => {
+    const status = String(statusRaw || '').toLowerCase();
     switch (status) {
       case 'open': return 'bg-blue-100 text-blue-600';
       case 'closed': return 'bg-green-100 text-green-600';
-      case 'pending': return 'bg-amber-100 text-amber-600';
+      case 'pending':
+      case 'under_review': return 'bg-amber-100 text-amber-600';
       default: return 'bg-gray-100 text-gray-600';
     }
   };
 
-  const getStatusIcon = (status) => {
+  const getStatusIcon = (statusRaw) => {
+    const status = String(statusRaw || '').toLowerCase();
     switch (status) {
       case 'open': return <AlertCircle className="w-3 h-3" />;
       case 'closed': return <CheckCircle className="w-3 h-3" />;
-      case 'pending': return <Clock className="w-3 h-3" />;
+      case 'pending':
+      case 'under_review': return <Clock className="w-3 h-3" />;
       default: return <Clock className="w-3 h-3" />;
     }
   };
@@ -274,16 +309,19 @@ export default function SupportPage() {
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
                   </div>
-                  <select
-                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm"
-                    value={activeFilter}
-                    onChange={(e) => setActiveFilter(e.target.value)}
-                  >
-                    <option value="all">All</option>
-                    <option value="open">Open</option>
-                    <option value="pending">Pending</option>
-                    <option value="closed">Closed</option>
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-gray-400" />
+                    <select
+                      className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm"
+                      value={activeFilter}
+                      onChange={(e) => setActiveFilter(e.target.value)}
+                    >
+                      <option value="all">All</option>
+                      <option value="open">Open</option>
+                      <option value="pending">Pending</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -300,9 +338,9 @@ export default function SupportPage() {
                     <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                     <h3 className="text-lg font-medium text-gray-700 mb-1">No Tickets Found</h3>
                     <p className="text-gray-600 text-sm">
-                      {searchQuery || activeFilter !== 'all' 
-                        ? 'No tickets match your search' 
-                        : 'You haven\'t created any tickets yet'}
+                      {searchQuery || activeFilter !== 'all'
+                        ? 'No tickets match your search'
+                        : "You haven't created any tickets yet"}
                     </p>
                   </div>
                 ) : (
@@ -319,24 +357,26 @@ export default function SupportPage() {
                               {ticket.subject}
                             </div>
                             <div className="text-sm text-gray-500 truncate">
-                              {ticket.message?.substring(0, 60)}...
+                              {String(ticket.message || '').substring(0, 60)}...
                             </div>
                           </div>
-                          <ArrowUpRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors" />
                         </div>
-                        
+
                         <div className="flex items-center justify-between mt-2">
                           <div className="flex items-center gap-2">
                             <div className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(ticket.status)}`}>
                               {getStatusIcon(ticket.status)}
-                              {ticket.status?.charAt(0).toUpperCase() + ticket.status?.slice(1)}
+                              {String(ticket.status || 'open')[0].toUpperCase() + String(ticket.status || 'open').slice(1)}
                             </div>
-                            <div className="text-xs text-gray-500">
-                              {ticket.category}
-                            </div>
+                            {ticket.category && (
+                              <div className="text-xs text-gray-500">{ticket.category}</div>
+                            )}
                           </div>
-                          <div className="text-xs text-gray-500">
-                            {ticket.createdAt ? new Date(ticket.createdAt).toLocaleDateString() : ''}
+                          <div className="text-xs text-gray-500 flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {ticket.createdAt ? new Date(ticket.createdAt).toLocaleDateString('en-IN', {
+                              day: 'numeric', month: 'short', year: 'numeric'
+                            }) : ''}
                           </div>
                         </div>
                       </Link>
@@ -349,10 +389,8 @@ export default function SupportPage() {
             {/* Contact Information */}
             <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-6">
               <h3 className="font-bold text-gray-900 mb-4">Contact Information</h3>
-              
+
               <div className="space-y-3">
-           
-                
                 <div className="flex items-center gap-3 p-3 bg-white/50 rounded-lg">
                   <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
                     <Mail className="w-5 h-5 text-green-600" />
@@ -362,7 +400,7 @@ export default function SupportPage() {
                     <div className="text-sm text-gray-600">officialearnko@gmail.com</div>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center gap-3 p-3 bg-white/50 rounded-lg">
                   <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
                     <Clock className="w-5 h-5 text-purple-600" />
@@ -378,7 +416,7 @@ export default function SupportPage() {
             {/* Quick Tips */}
             <div className="bg-white border border-gray-200 rounded-xl p-6">
               <h3 className="font-bold text-gray-900 mb-4">Quick Tips</h3>
-              
+
               <div className="space-y-3">
                 <div className="flex items-start gap-2">
                   <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
@@ -389,17 +427,8 @@ export default function SupportPage() {
                     <div className="text-xs text-gray-600">Provide detailed information about your issue</div>
                   </div>
                 </div>
-                
-                <div className="flex items-start gap-2">
-                  <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">Include Screenshots</div>
-                    <div className="text-xs text-gray-600">Add screenshots when creating tickets</div>
-                  </div>
-                </div>
-                
+
+
                 <div className="flex items-start gap-2">
                   <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
                     <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
@@ -411,7 +440,7 @@ export default function SupportPage() {
                 </div>
               </div>
             </div>
-          </div>
+          </div>{/* Right column */}
         </div>
       </div>
     </div>

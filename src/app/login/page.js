@@ -185,14 +185,14 @@ function LoginPageInner() {
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
-              <div className="text-right mt-2">
+              {/* <div className="text-right mt-2">
                 <Link
                   href="/forgot-password"
                   className="text-sm text-blue-600 hover:text-blue-700 font-medium"
                 >
                   Forgot password?
                 </Link>
-              </div>
+              </div> */}
             </div>
 
             {/* Submit Button */}

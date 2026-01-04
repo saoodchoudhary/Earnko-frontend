@@ -13,11 +13,25 @@ export default function AdminProductCreatePage() {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      try { return await res.json() } catch { return null }
+    }
+    const txt = await res.text().catch(() => '')
+    return { success: false, message: txt }
+  }
+
   const handleSubmit = async (payload) => {
     try {
       setSaving(true)
-      const token = localStorage.getItem('token')
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/products`, {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      if (!base) {
+        toast.error('NEXT_PUBLIC_BACKEND_URL not set')
+        return
+      }
+      const res = await fetch(`${base}/api/admin/products`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json', 
@@ -25,8 +39,16 @@ export default function AdminProductCreatePage() {
         },
         body: JSON.stringify(payload)
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.message || 'Failed to create product')
+      const data = await safeJson(res)
+      if (!res.ok) {
+        const msg = data?.message || `Failed to create product (HTTP ${res.status})`
+        if ((data?.message || '').startsWith('<!DOCTYPE') || (data?.message || '').includes('<html')) {
+          toast.error('Received HTML from API. Check NEXT_PUBLIC_BACKEND_URL/backend.')
+        } else {
+          toast.error(msg)
+        }
+        return
+      }
       toast.success('Product created successfully!')
       router.push('/admin/products')
     } catch (err) {
@@ -40,10 +62,10 @@ export default function AdminProductCreatePage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="border-b border-gray-200 bg-white">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
+        <div className="container mx-auto px-4 py-4 sm:py-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <nav className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+              <nav className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 mb-2">
                 <button 
                   onClick={() => router.push('/admin')}
                   className="hover:text-gray-900 transition-colors"
@@ -60,8 +82,8 @@ export default function AdminProductCreatePage() {
                 <ChevronRight className="w-4 h-4" />
                 <span className="text-gray-900 font-medium">Create Product</span>
               </nav>
-              <h1 className="text-2xl font-bold text-gray-900">Create New Product</h1>
-              <p className="text-gray-600 mt-1">Add a new product to your affiliate platform</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Create New Product</h1>
+              <p className="text-xs sm:text-sm text-gray-600 mt-1">Add a new product to your affiliate platform</p>
             </div>
             
             <div className="flex items-center gap-3">
@@ -81,19 +103,19 @@ export default function AdminProductCreatePage() {
       <div className="container mx-auto px-4 py-6">
         <div className="max-w-4xl mx-auto">
           {/* Info Card */}
-          <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
-            <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+          <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 mb-6">
+            <h2 className="text-base sm:text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
               <Package className="w-5 h-5 text-gray-700" />
               Product Creation
             </h2>
             
             <div className="space-y-4">
               <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg">
-                <h3 className="font-medium text-blue-900 mb-2 flex items-center gap-2">
+                <h3 className="font-medium text-blue-900 mb-2 flex items-center gap-2 text-sm">
                   <AlertCircle className="w-4 h-4" />
                   Important Information
                 </h3>
-                <ul className="text-sm text-blue-800 space-y-1 ml-6 list-disc">
+                <ul className="text-xs sm:text-sm text-blue-800 space-y-1 ml-5 list-disc">
                   <li>Fill in all required fields marked with *</li>
                   <li>Provide clear product images for better conversions</li>
                   <li>Set appropriate commission rates for affiliates</li>
@@ -101,7 +123,7 @@ export default function AdminProductCreatePage() {
                 </ul>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs sm:text-sm">
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <div className="font-medium text-gray-900 mb-1">Step 1</div>
                   <div className="text-gray-600">Enter basic product details</div>
@@ -120,19 +142,19 @@ export default function AdminProductCreatePage() {
 
           {/* Create Form */}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="p-6 border-b border-gray-200">
+            <div className="p-4 sm:p-6 border-b border-gray-200">
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center">
                   <Plus className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">Product Details</h2>
-                  <p className="text-gray-600 text-sm">Fill in the product information below</p>
+                  <h2 className="text-base sm:text-lg font-bold text-gray-900">Product Details</h2>
+                  <p className="text-xs sm:text-sm text-gray-600">Fill in the product information below</p>
                 </div>
               </div>
             </div>
 
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <ProductForm 
                 onSubmit={handleSubmit} 
                 submitting={saving} 
@@ -140,11 +162,11 @@ export default function AdminProductCreatePage() {
             </div>
 
             {/* Form Actions */}
-            <div className="p-6 border-t border-gray-200 bg-gray-50">
+            <div className="p-4 sm:p-6 border-t border-gray-200 bg-gray-50">
               <div className="flex items-center justify-between">
                 <button
                   onClick={() => router.push('/admin/products')}
-                  className="px-6 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                  className="px-4 sm:px-6 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   Cancel
@@ -154,7 +176,7 @@ export default function AdminProductCreatePage() {
                   type="submit"
                   form="product-form"
                   disabled={saving}
-                  className="px-6 py-2.5 bg-gray-800 text-white font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="px-4 sm:px-6 py-2.5 bg-gray-800 text-white font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {saving ? (
                     <>
@@ -176,7 +198,7 @@ export default function AdminProductCreatePage() {
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white border border-gray-200 rounded-lg p-5">
               <h3 className="font-bold text-gray-900 mb-3">Best Practices</h3>
-              <ul className="space-y-2 text-sm text-gray-600">
+              <ul className="space-y-2 text-xs sm:text-sm text-gray-600">
                 <li className="flex items-start gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-gray-400 mt-1.5 flex-shrink-0"></div>
                   <span>Use high-quality product images (minimum 500x500px)</span>
@@ -198,7 +220,7 @@ export default function AdminProductCreatePage() {
             
             <div className="bg-white border border-gray-200 rounded-lg p-5">
               <h3 className="font-bold text-gray-900 mb-3">Required Fields</h3>
-              <ul className="space-y-2 text-sm text-gray-600">
+              <ul className="space-y-2 text-xs sm:text-sm text-gray-600">
                 <li className="flex items-start gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-gray-400 mt-1.5 flex-shrink-0"></div>
                   <span><span className="font-medium text-gray-900">Product Title</span> - Clear, descriptive name</span>

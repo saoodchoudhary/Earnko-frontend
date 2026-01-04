@@ -1,20 +1,22 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'react-hot-toast';
 import {
   CreditCard, Filter, Download, RefreshCw,
-  Search, TrendingUp, CheckCircle, Clock,
-  AlertCircle, IndianRupee, Store, Calendar,
-  ArrowUpRight, ChevronDown
+  Search, CheckCircle, Clock,
+  AlertCircle, IndianRupee, Store, Calendar
 } from 'lucide-react';
 
 export default function UserTransactionsPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'approved' | 'pending' | 'processing' | 'rejected'
+  const [dateFilter, setDateFilter] = useState('all');     // 'all' | 'today' | 'week' | 'month' | 'year'
+
   const [stats, setStats] = useState({
     totalEarnings: 0,
     pendingAmount: 0,
@@ -22,95 +24,47 @@ export default function UserTransactionsPage() {
     totalTransactions: 0
   });
 
-  const loadTransactions = async (showLoading = true) => {
-    try {
-      if (showLoading) setLoading(true);
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/conversions/me`, {
-        headers: { Authorization: token ? `Bearer ${token}` : '' }
-      });
-      const data = await res.json();
-      if (res.ok) {
-        const conversions = data?.data?.conversions || [];
-        setItems(conversions);
-        
-        // Calculate stats
-        const totalEarnings = conversions.reduce((sum, tx) => sum + Number(tx.commissionAmount || 0), 0);
-        const pendingAmount = conversions
-          .filter(tx => tx.status === 'pending' || tx.status === 'processing')
-          .reduce((sum, tx) => sum + Number(tx.commissionAmount || 0), 0);
-        const approvedAmount = conversions
-          .filter(tx => tx.status === 'approved' || tx.status === 'completed')
-          .reduce((sum, tx) => sum + Number(tx.commissionAmount || 0), 0);
-        
-        setStats({
-          totalEarnings,
-          pendingAmount,
-          approvedAmount,
-          totalTransactions: conversions.length
-        });
-      }
-    } catch (error) {
-      console.error('Error loading transactions:', error);
-    } finally {
-      if (showLoading) setLoading(false);
-      setRefreshing(false);
+  // simple client-side pagination
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      try { return await res.json(); } catch { return null; }
     }
+    const txt = await res.text().catch(() => '');
+    return { success: false, message: txt };
   };
 
-  useEffect(() => {
-    loadTransactions();
-  }, []);
-
-  const refreshTransactions = () => {
-    setRefreshing(true);
-    loadTransactions(false);
+  // Normalize backend statuses to UI categories
+  // Backend schema includes: pending, confirmed, cancelled, under_review
+  // Webhook may send: approved/rejected/valid/paid/void etc.
+  const normalizeStatus = (s) => {
+    const x = String(s || '').toLowerCase();
+    if (['approved', 'confirmed', 'valid', 'paid', 'completed'].includes(x)) return 'approved';
+    if (['pending', 'under_review', 'processing'].includes(x)) return 'pending';
+    if (['rejected', 'cancelled', 'invalid', 'void'].includes(x)) return 'rejected';
+    return 'pending';
   };
-
-  const filteredItems = items.filter(tx => {
-    // Search filter
-    const matchesSearch = searchQuery === '' || 
-      tx.orderId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tx.store?.name?.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    // Status filter
-    const matchesStatus = statusFilter === 'all' || tx.status === statusFilter;
-    
-    // Date filter (simplified - would need proper date logic)
-    const matchesDate = dateFilter === 'all' || true;
-    
-    return matchesSearch && matchesStatus && matchesDate;
-  });
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'approved':
-      case 'completed':
-        return 'bg-green-100 text-green-600';
-      case 'pending':
-      case 'processing':
-        return 'bg-amber-100 text-amber-600';
-      case 'rejected':
-      case 'cancelled':
-        return 'bg-red-100 text-red-600';
-      default:
-        return 'bg-gray-100 text-gray-600';
+      case 'approved': return 'bg-green-100 text-green-600';
+      case 'pending': return 'bg-amber-100 text-amber-600';
+      case 'rejected': return 'bg-red-100 text-red-600';
+      default: return 'bg-gray-100 text-gray-600';
     }
   };
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'approved':
-      case 'completed':
-        return <CheckCircle className="w-3 h-3" />;
-      case 'pending':
-      case 'processing':
-        return <Clock className="w-3 h-3" />;
-      case 'rejected':
-      case 'cancelled':
-        return <AlertCircle className="w-3 h-3" />;
-      default:
-        return <Clock className="w-3 h-3" />;
+      case 'approved': return <CheckCircle className="w-3 h-3" />;
+      case 'pending': return <Clock className="w-3 h-3" />;
+      case 'rejected': return <AlertCircle className="w-3 h-3" />;
+      default: return <Clock className="w-3 h-3" />;
     }
   };
 
@@ -123,6 +77,106 @@ export default function UserTransactionsPage() {
     });
   };
 
+  const withinDateFilter = (d) => {
+    if (dateFilter === 'all') return true;
+    const now = new Date();
+    const t = new Date(d);
+    if (Number.isNaN(t.getTime())) return false;
+    const diffDays = Math.floor((now - t) / (1000 * 60 * 60 * 24));
+    if (dateFilter === 'today') return t.toDateString() === now.toDateString();
+    if (dateFilter === 'week') return diffDays <= 7;
+    if (dateFilter === 'month') return diffDays <= 30;
+    if (dateFilter === 'year') return diffDays <= 365;
+    return true;
+  };
+
+  const loadTransactions = async (showLoading = true) => {
+    try {
+      if (showLoading) setLoading(true);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        if (typeof window !== 'undefined') window.location.href = '/login?next=/dashboard/transactions';
+        return;
+      }
+      const res = await fetch(`${base}/api/conversions/me`, {
+        headers: { Authorization: token ? `Bearer ${token}` : '' }
+      });
+      const data = await safeJson(res);
+      if (res.ok) {
+        const conversions = Array.isArray(data?.data?.conversions) ? data.data.conversions : [];
+        // normalize mapped shape
+        const mapped = conversions.map(tx => ({
+          ...tx,
+          __normStatus: normalizeStatus(tx.status),
+          store: tx.store || null
+        }));
+        setItems(mapped);
+
+        // stats
+        const totalEarnings = mapped.reduce((sum, tx) => sum + Number(tx.commissionAmount || 0), 0);
+        const pendingAmount = mapped
+          .filter(tx => tx.__normStatus === 'pending')
+          .reduce((sum, tx) => sum + Number(tx.commissionAmount || 0), 0);
+        const approvedAmount = mapped
+          .filter(tx => tx.__normStatus === 'approved')
+          .reduce((sum, tx) => sum + Number(tx.commissionAmount || 0), 0);
+
+        setStats({
+          totalEarnings,
+          pendingAmount,
+          approvedAmount,
+          totalTransactions: mapped.length
+        });
+      } else {
+        toast.error(data?.message || 'Failed to load transactions');
+        setItems([]);
+        setStats({ totalEarnings: 0, pendingAmount: 0, approvedAmount: 0, totalTransactions: 0 });
+      }
+    } catch (error) {
+      console.error('Error loading transactions:', error);
+      toast.error('Error loading transactions');
+    } finally {
+      if (showLoading) setLoading(false);
+      setRefreshing(false);
+      setPage(1); // reset to first page after load
+    }
+  };
+
+  useEffect(() => {
+    if (base) loadTransactions(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base]);
+
+  const refreshTransactions = () => {
+    setRefreshing(true);
+    loadTransactions(false);
+  };
+
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return items.filter(tx => {
+      // search
+      const matchesSearch =
+        q === '' ||
+        String(tx.orderId || '').toLowerCase().includes(q) ||
+        String(tx.store?.name || '').toLowerCase().includes(q);
+
+      // status
+      const matchesStatus = statusFilter === 'all' || tx.__normStatus === statusFilter || (statusFilter === 'processing' && tx.__normStatus === 'pending');
+
+      // date
+      const matchesDate = withinDateFilter(tx.createdAt);
+
+      return matchesSearch && matchesStatus && matchesDate;
+    });
+  }, [items, searchQuery, statusFilter, dateFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+  const pageItems = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, page]);
+
   const exportData = () => {
     const dataStr = JSON.stringify(filteredItems, null, 2);
     const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
@@ -132,6 +186,8 @@ export default function UserTransactionsPage() {
     linkElement.setAttribute('download', exportFileDefaultName);
     linkElement.click();
   };
+
+  const fmtINR = (n) => `₹${Number(n || 0).toLocaleString()}`;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
@@ -177,35 +233,27 @@ export default function UserTransactionsPage() {
             {/* Stats Overview */}
             <div className="bg-white border border-gray-200 rounded-xl p-6">
               <h3 className="font-bold text-gray-900 mb-4">Transaction Summary</h3>
-              
+
               <div className="space-y-4">
                 <div>
                   <div className="text-xs text-gray-500">Total Earnings</div>
-                  <div className="text-2xl font-bold text-green-600">
-                    ₹{stats.totalEarnings.toLocaleString()}
-                  </div>
+                  <div className="text-2xl font-bold text-green-600">{fmtINR(stats.totalEarnings)}</div>
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg p-3">
                     <div className="text-xs text-gray-500">Approved</div>
-                    <div className="text-lg font-bold text-gray-900">
-                      ₹{stats.approvedAmount.toLocaleString()}
-                    </div>
+                    <div className="text-lg font-bold text-gray-900">{fmtINR(stats.approvedAmount)}</div>
                   </div>
                   <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-lg p-3">
                     <div className="text-xs text-gray-500">Pending</div>
-                    <div className="text-lg font-bold text-gray-900">
-                      ₹{stats.pendingAmount.toLocaleString()}
-                    </div>
+                    <div className="text-lg font-bold text-gray-900">{fmtINR(stats.pendingAmount)}</div>
                   </div>
                 </div>
-                
+
                 <div className="pt-3 border-t border-gray-200">
                   <div className="text-xs text-gray-500">Total Transactions</div>
-                  <div className="text-lg font-bold text-gray-900">
-                    {stats.totalTransactions}
-                  </div>
+                  <div className="text-lg font-bold text-gray-900">{stats.totalTransactions}</div>
                 </div>
               </div>
             </div>
@@ -216,7 +264,7 @@ export default function UserTransactionsPage() {
                 <Filter className="w-5 h-5 text-blue-600" />
                 Filters
               </h3>
-              
+
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -229,11 +277,11 @@ export default function UserTransactionsPage() {
                       placeholder="Search by order or store..."
                       className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
                     />
                   </div>
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Status
@@ -241,16 +289,15 @@ export default function UserTransactionsPage() {
                   <select
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
+                    onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
                   >
                     <option value="all">All Status</option>
                     <option value="approved">Approved</option>
-                    <option value="pending">Pending</option>
-                    <option value="processing">Processing</option>
-                    <option value="rejected">Rejected</option>
+                    <option value="pending">Pending/Under Review</option>
+                    <option value="rejected">Rejected/Cancelled</option>
                   </select>
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Date Range
@@ -258,13 +305,13 @@ export default function UserTransactionsPage() {
                   <select
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                     value={dateFilter}
-                    onChange={(e) => setDateFilter(e.target.value)}
+                    onChange={(e) => { setDateFilter(e.target.value); setPage(1); }}
                   >
                     <option value="all">All Time</option>
                     <option value="today">Today</option>
-                    <option value="week">This Week</option>
-                    <option value="month">This Month</option>
-                    <option value="year">This Year</option>
+                    <option value="week">Last 7 Days</option>
+                    <option value="month">Last 30 Days</option>
+                    <option value="year">Last 365 Days</option>
                   </select>
                 </div>
               </div>
@@ -273,14 +320,14 @@ export default function UserTransactionsPage() {
             {/* Quick Actions */}
             <div className="bg-white border border-gray-200 rounded-xl p-6">
               <h3 className="font-bold text-gray-900 mb-4">Quick Actions</h3>
-              
+
               <div className="space-y-3">
                 <button
                   onClick={exportData}
                   className="w-full py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
                 >
                   <Download className="w-4 h-4" />
-                  Export as CSV
+                  Export JSON
                 </button>
                 <button className="w-full py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
                   <Calendar className="w-4 h-4" />
@@ -352,7 +399,7 @@ export default function UserTransactionsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {filteredItems.map((tx) => (
+                      {pageItems.map((tx) => (
                         <tr key={tx._id} className="hover:bg-gray-50 transition-colors">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm font-medium text-gray-900">
@@ -372,30 +419,30 @@ export default function UserTransactionsPage() {
                                   {tx.store?.name || 'Unknown Store'}
                                 </div>
                                 <div className="text-xs text-gray-500">
-                                  {tx.productName?.substring(0, 20) || 'Product'}
+                                  {String(tx.productName || '').substring(0, 24) || 'Product'}
                                 </div>
                               </div>
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm font-medium text-gray-900">
-                              ₹{Number(tx.productAmount || 0).toLocaleString()}
+                              {fmtINR(tx.productAmount || 0)}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm font-bold text-green-600">
-                              ₹{Number(tx.commissionAmount || 0).toLocaleString()}
+                              {fmtINR(tx.commissionAmount || 0)}
                             </div>
-                            {tx.commissionRate && (
+                            {tx.commissionRate != null && (
                               <div className="text-xs text-gray-500">
-                                {tx.commissionRate}% rate
+                                {Number(tx.commissionRate || 0)}% rate
                               </div>
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className={`px-3 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1 ${getStatusColor(tx.status)}`}>
-                              {getStatusIcon(tx.status)}
-                              {tx.status?.charAt(0).toUpperCase() + tx.status?.slice(1)}
+                            <div className={`px-3 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1 ${getStatusColor(tx.__normStatus)}`}>
+                              {getStatusIcon(tx.__normStatus)}
+                              {tx.__normStatus?.charAt(0).toUpperCase() + tx.__normStatus?.slice(1)}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -417,17 +464,25 @@ export default function UserTransactionsPage() {
               </div>
 
               {/* Table Footer */}
-              {filteredItems.length > 0 && (
+              {filteredItems.length > 0 && !loading && (
                 <div className="px-6 py-4 border-t border-gray-200">
                   <div className="flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                      Showing {Math.min(filteredItems.length, 10)} transactions
+                      Page {page} of {totalPages} • Showing {pageItems.length} rows
                     </div>
                     <div className="flex items-center gap-2">
-                      <button className="px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50">
+                      <button
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={page <= 1}
+                        className="px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
+                      >
                         Previous
                       </button>
-                      <button className="px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50">
+                      <button
+                        onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                        disabled={page >= totalPages}
+                        className="px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
+                      >
                         Next
                       </button>
                     </div>

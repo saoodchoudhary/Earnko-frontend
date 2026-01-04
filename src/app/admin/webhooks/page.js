@@ -1,24 +1,26 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'react-hot-toast'
 import { 
   Search, Filter, RefreshCw, Eye, AlertCircle, 
   CheckCircle, Clock, ChevronRight, ChevronLeft,
-  Download, BarChart3, Server, ExternalLink
+  Download, Server
 } from 'lucide-react'
 
 export default function AdminWebhooksPage() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('')
   const [source, setSource] = useState('')
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
   const [total, setTotal] = useState(0)
+
   const [stats, setStats] = useState({
     total: 0,
     received: 0,
@@ -28,41 +30,87 @@ export default function AdminWebhooksPage() {
 
   const totalPages = useMemo(() => Math.max(Math.ceil(total / limit), 1), [total, limit])
 
+  const envWarned = useRef(false)
+  const getBase = () => process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getHeaders = () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    return { Authorization: token ? `Bearer ${token}` : '' }
+  }
+  const ensureEnvConfigured = () => {
+    const base = getBase()
+    if (!base && !envWarned.current) {
+      envWarned.current = true
+      toast.error('Backend URL not configured. Set NEXT_PUBLIC_BACKEND_URL')
+    }
+  }
+  const handleHttpError = async (res) => {
+    let message = 'Request failed'
+    try {
+      const data = await res.clone().json()
+      if (data?.message) message = data.message
+    } catch {}
+    if (res.status === 401) message = 'Unauthorized. Please login again.'
+    if (res.status === 403) message = 'Forbidden. Admin access required.'
+    throw new Error(message)
+  }
+
+  const loadStatusTotals = async () => {
+    try {
+      ensureEnvConfigured()
+      const base = getBase()
+      const headers = getHeaders()
+
+      const statuses = ['received','processed','error']
+      const reqs = statuses.map(s => fetch(`${base}/api/admin/webhooks?status=${s}&limit=1`, { headers }))
+      const resArr = await Promise.all(reqs)
+      for (const r of resArr) { if (!r.ok) await handleHttpError(r) }
+      const dataArr = await Promise.all(resArr.map(r => r.json().catch(() => ({}))))
+
+      const totals = {}
+      statuses.forEach((s, i) => { totals[s] = Number(dataArr[i]?.data?.total || 0) })
+
+      // Total across all
+      const rAll = await fetch(`${base}/api/admin/webhooks?limit=1`, { headers })
+      if (!rAll.ok) await handleHttpError(rAll)
+      const jAll = await rAll.json().catch(() => ({}))
+
+      setStats({
+        total: Number(jAll?.data?.total || 0),
+        received: totals.received || 0,
+        processed: totals.processed || 0,
+        error: totals.error || 0
+      })
+    } catch (err) {
+      toast.error(err.message || 'Failed to load webhook stats')
+    }
+  }
+
   const loadData = async (signal, showLoading = true) => {
     try {
+      ensureEnvConfigured()
       if (showLoading) setLoading(true)
-      const token = localStorage.getItem('token')
+      const base = getBase()
+      const headers = getHeaders()
+
       const params = new URLSearchParams({ page: String(page), limit: String(limit) })
       if (q) params.set('q', q)
       if (status) params.set('status', status)
       if (source) params.set('source', source)
-      
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/webhooks?${params.toString()}`, {
-        signal: controller.signal, 
-        headers: { Authorization: token ? `Bearer ${token}` : '' }
+
+      const res = await fetch(`${base}/api/admin/webhooks?${params.toString()}`, {
+        signal,
+        headers
       })
+      if (!res.ok) await handleHttpError(res)
       const data = await res.json()
-      if (!res.ok) throw new Error(data?.message || 'Failed to load events')
-      setItems(data?.data?.items || [])
-      setTotal(data?.data?.total || 0)
 
-      // Load stats if available
-      const statsRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/webhooks/stats`, {
-        signal: controller.signal,
-        headers: { Authorization: token ? `Bearer ${token}` : '' }
-      })
-      if (statsRes.ok) {
-        const statsData = await statsRes.json()
-        setStats(statsData.data || {
-          total: 0,
-          received: 0,
-          processed: 0,
-          error: 0
-        })
-      }
+      setItems(Array.isArray(data?.data?.items) ? data.data.items : [])
+      setTotal(Number(data?.data?.total || 0))
 
+      // Update stats in background
+      loadStatusTotals()
     } catch (err) {
-      if (err.name !== 'AbortError') toast.error(err.message || 'Error loading')
+      if (err.name !== 'AbortError') toast.error(err.message || 'Error loading events')
     } finally {
       if (showLoading) setLoading(false)
       setRefreshing(false)
@@ -73,6 +121,7 @@ export default function AdminWebhooksPage() {
     const controller = new AbortController()
     loadData(controller.signal)
     return () => controller.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, status, source, page, limit])
 
   const refresh = () => {
@@ -91,18 +140,47 @@ export default function AdminWebhooksPage() {
   const exportData = () => {
     const exportData = {
       generatedAt: new Date().toISOString(),
-      filters: { q, status, source },
-      items: items
+      filters: { q, status, source, page, limit },
+      items
     }
-    
-    const dataStr = JSON.stringify(exportData, null, 2)
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr)
-    const exportFileDefaultName = `webhooks-${new Date().toISOString().split('T')[0]}.json`
-    const linkElement = document.createElement('a')
-    linkElement.setAttribute('href', dataUri)
-    linkElement.setAttribute('download', exportFileDefaultName)
-    linkElement.click()
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `webhooks-${new Date().toISOString().split('T')[0]}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
     toast.success('Data exported successfully!')
+  }
+
+  // Backend-supported status change via PATCH /api/admin/webhooks/:id/mark
+  const handleStatusChange = async (eventId, newStatus) => {
+    try {
+      ensureEnvConfigured()
+      const base = getBase()
+      const headers = { 'Content-Type': 'application/json', ...getHeaders() }
+      const allowed = ['received','processed','error']
+      if (!allowed.includes(newStatus)) throw new Error('Invalid status')
+
+      const res = await fetch(`${base}/api/admin/webhooks/${eventId}/mark`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ status: newStatus })
+      })
+      if (!res.ok) await handleHttpError(res)
+      const js = await res.json()
+      const updated = js?.data?.item
+      if (!updated || updated.status !== newStatus) throw new Error('Status update did not persist')
+
+      setItems(prev => prev.map(ev => (ev._id === eventId ? updated : ev)))
+      toast.success(`Event marked as ${newStatus}`)
+      // Refresh stats in background
+      loadStatusTotals()
+    } catch (err) {
+      toast.error(err.message || 'Failed to update status')
+    }
   }
 
   return (
@@ -249,7 +327,7 @@ export default function AdminWebhooksPage() {
                 <Th>Source</Th>
                 <Th>Event Type</Th>
                 <Th>Status</Th>
-                <Th>Transaction ID</Th>
+                <Th>Transaction</Th>
                 <Th>Date</Th>
                 <Th className="text-right">Actions</Th>
               </tr>
@@ -283,8 +361,8 @@ export default function AdminWebhooksPage() {
                   <Td>
                     <div className="font-medium text-gray-900">{event.eventType || '-'}</div>
                     {event.eventData && (
-                      <div className="text-xs text-gray-500 truncate max-w-[200px]">
-                        {JSON.stringify(event.eventData).substring(0, 50)}...
+                      <div className="text-xs text-gray-500 truncate max-w-[220px]">
+                        {JSON.stringify(event.eventData).substring(0, 80)}...
                       </div>
                     )}
                   </Td>
@@ -292,8 +370,8 @@ export default function AdminWebhooksPage() {
                     <StatusBadge status={event.status} />
                   </Td>
                   <Td>
-                    <div className="font-mono text-sm text-gray-700">
-                      {event.transaction || '-'}
+                    <div className="font-mono text-sm text-gray-700 truncate max-w-[220px]">
+                      {event.transaction?._id || event.transaction || '-'}
                     </div>
                   </Td>
                   <Td>
@@ -301,17 +379,28 @@ export default function AdminWebhooksPage() {
                       {event.createdAt ? new Date(event.createdAt).toLocaleDateString() : '-'}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {event.createdAt ? new Date(event.createdAt).toLocaleTimeString() : '-'}
+                      {event.createdAt ? new Date(event.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-'}
                     </div>
                   </Td>
                   <Td className="text-right">
-                    <Link
-                      href={`/admin/webhooks/${event._id}`}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <Eye className="w-4 h-4" />
-                      View Details
-                    </Link>
+                    <div className="inline-flex items-center gap-2">
+                      <Link
+                        href={`/admin/webhooks/${event._id}`}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        <Eye className="w-4 h-4" />
+                        View
+                      </Link>
+                      <select
+                        className="px-2 py-1.5 text-sm border border-gray-300 rounded-lg"
+                        value={event.status}
+                        onChange={(e) => handleStatusChange(event._id, e.target.value)}
+                      >
+                        <option value="received">Received</option>
+                        <option value="processed">Processed</option>
+                        <option value="error">Error</option>
+                      </select>
+                    </div>
                   </Td>
                 </tr>
               ))}

@@ -7,7 +7,8 @@ import {
 } from 'recharts'
 import {
   TrendingUp, BarChart3, Target, DollarSign, Eye, Calendar,
-  Filter, Download, RefreshCw, ArrowUpRight, ArrowDownRight
+  Filter, Download, RefreshCw, ArrowUpRight, ArrowDownRight,
+  Link as LinkIcon, Copy, ExternalLink
 } from 'lucide-react'
 
 export default function UserAnalyticsPage() {
@@ -28,41 +29,77 @@ export default function UserAnalyticsPage() {
     commissionTotal: 0,
   })
 
+  // Per-link performance
+  const [linksLoading, setLinksLoading] = useState(true)
+  const [links, setLinks] = useState([]) // items: { subid, shareUrl, clicks, approvedConversions, approvedCommissionSum, cuelinksUrl, createdAt }
+
+  const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null)
+
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      try { return await res.json() } catch { return null }
+    }
+    const txt = await res.text().catch(() => '')
+    return { success: false, message: txt }
+  }
+
   const loadAnalytics = async (signal, showLoading = true) => {
     try {
       if (showLoading) setLoading(true)
-      const token = localStorage.getItem('token')
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
-      
-      // Load current period analytics
+      const token = getToken()
+      if (!base || !token) {
+        setSummary({ clicksTotal: 0, conversionsTotal: 0, commissionTotal: 0, pendingAmount: 0, approvedAmount: 0 })
+        setDaily([])
+        return
+      }
+
+      // Current period
       const res = await fetch(`${base}/api/user/analytics?range=${range}`, {
         signal,
-        headers: { Authorization: token ? `Bearer ${token}` : '' }
+        headers: { Authorization: `Bearer ${token}` }
       })
-      const js = await res.json()
-      if (!res.ok) throw new Error(js?.message || 'Failed to load analytics')
-      
+      const js = await safeJson(res)
+      if (!res.ok) throw new Error(js?.message || `Failed to load analytics (HTTP ${res.status})`)
+
       const data = js?.data || {}
-      setSummary(data.summary || {})
-      setDaily(data.daily || [])
+      setSummary({
+        clicksTotal: Number(data?.summary?.clicksTotal || 0),
+        conversionsTotal: Number(data?.summary?.conversionsTotal || 0),
+        commissionTotal: Number(data?.summary?.commissionTotal || 0),
+        pendingAmount: Number(data?.summary?.pendingAmount || 0),
+        approvedAmount: Number(data?.summary?.approvedAmount || 0),
+      })
+      setDaily(Array.isArray(data?.daily) ? data.daily : [])
 
-      // Load previous period for comparison
-      let prevRange = '30d'
-      if (range === '7d') prevRange = '7d'
-      else if (range === '30d') prevRange = '30d'
-      else if (range === '90d') prevRange = '90d'
+      // Previous period (compute from/to: previous window of same length)
+      const now = new Date()
+      const lenDays = range === '7d' ? 7 : range === '90d' ? 90 : 30
+      const toPrev = new Date(now)
+      toPrev.setDate(toPrev.getDate() - lenDays)
+      const fromPrev = new Date(toPrev)
+      fromPrev.setDate(fromPrev.getDate() - lenDays)
 
-      const prevRes = await fetch(`${base}/api/user/analytics?range=${prevRange}&offset=1`, {
+      const prevParams = new URLSearchParams({
+        from: fromPrev.toISOString(),
+        to: toPrev.toISOString(),
+      })
+
+      const prevRes = await fetch(`${base}/api/user/analytics?${prevParams.toString()}`, {
         signal,
-        headers: { Authorization: token ? `Bearer ${token}` : '' }
+        headers: { Authorization: `Bearer ${token}` }
       })
       if (prevRes.ok) {
-        const prevData = await prevRes.json()
-        setPrevPeriod(prevData.data?.summary || {
-          clicksTotal: 0,
-          conversionsTotal: 0,
-          commissionTotal: 0,
+        const prevData = await safeJson(prevRes)
+        const prevSum = prevData?.data?.summary || {}
+        setPrevPeriod({
+          clicksTotal: Number(prevSum.clicksTotal || 0),
+          conversionsTotal: Number(prevSum.conversionsTotal || 0),
+          commissionTotal: Number(prevSum.commissionTotal || 0),
         })
+      } else {
+        setPrevPeriod({ clicksTotal: 0, conversionsTotal: 0, commissionTotal: 0 })
       }
 
     } catch (err) {
@@ -75,17 +112,46 @@ export default function UserAnalyticsPage() {
     }
   }
 
+  const loadLinks = async (signal) => {
+    try {
+      setLinksLoading(true)
+      const token = getToken()
+      if (!base || !token) {
+        setLinks([]); return
+      }
+      const res = await fetch(`${base}/api/user/links`, {
+        signal,
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const js = await safeJson(res)
+      if (!res.ok) {
+        toast.error(js?.message || `Failed to load links (HTTP ${res.status})`)
+        setLinks([])
+        return
+      }
+      const list = js?.data?.items || []
+      setLinks(Array.isArray(list) ? list : [])
+    } catch (err) {
+      if (err.name !== 'AbortError') toast.error('Error loading links')
+      setLinks([])
+    } finally {
+      setLinksLoading(false)
+    }
+  }
+
   useEffect(() => {
     const controller = new AbortController()
     loadAnalytics(controller.signal)
+    loadLinks(controller.signal)
     return () => controller.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range])
 
   const chartData = useMemo(() => Array.isArray(daily) ? daily : [], [daily])
 
   const calculateGrowth = (current, previous) => {
     if (!previous || previous === 0) return 0
-    return ((current - previous) / previous * 100).toFixed(1)
+    return Number((((current - previous) / previous) * 100).toFixed(1))
   }
 
   const growth = {
@@ -98,11 +164,10 @@ export default function UserAnalyticsPage() {
     const report = {
       period: range,
       generatedAt: new Date().toISOString(),
-      summary: summary,
-      daily: daily,
-      growth: growth
+      summary,
+      daily,
+      growth
     }
-    
     const dataStr = JSON.stringify(report, null, 2)
     const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr)
     const exportFileDefaultName = `analytics-${range}-${new Date().toISOString().split('T')[0]}.json`
@@ -117,6 +182,27 @@ export default function UserAnalyticsPage() {
     setRefreshing(true)
     const controller = new AbortController()
     loadAnalytics(controller.signal, false)
+    loadLinks(controller.signal)
+  }
+
+  const fmtINR = (n) => `₹${Number(n || 0).toLocaleString()}`
+
+  // Rank links by earnings and clicks
+  const topLinksByEarnings = useMemo(() => {
+    const arr = Array.isArray(links) ? [...links] : []
+    arr.sort((a, b) => Number(b.approvedCommissionSum || 0) - Number(a.approvedCommissionSum || 0))
+    return arr.slice(0, 5)
+  }, [links])
+
+  const topLinksByClicks = useMemo(() => {
+    const arr = Array.isArray(links) ? [...links] : []
+    arr.sort((a, b) => Number(b.clicks || 0) - Number(a.clicks || 0))
+    return arr.slice(0, 5)
+  }, [links])
+
+  const copyToClipboard = async (text, msg = 'Copied') => {
+    try { await navigator.clipboard.writeText(text); toast.success(msg) }
+    catch { toast.error('Failed to copy') }
   }
 
   return (
@@ -157,9 +243,9 @@ export default function UserAnalyticsPage() {
 
       {/* Main Content */}
       <div className="container mx-auto px-4 py-6">
-        <div className="grid lg:grid-cols-3 gap-6">
+        <div className="grid xl:grid-cols-3 gap-6">
           {/* Left Column */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="xl:col-span-2 space-y-6">
             {/* Filters */}
             <div className="bg-white border border-gray-200 rounded-xl p-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -205,26 +291,26 @@ export default function UserAnalyticsPage() {
               />
               <StatCard 
                 title="Total Commission" 
-                value={`₹${Number(summary.commissionTotal || 0).toLocaleString()}`}
+                value={fmtINR(summary.commissionTotal || 0)}
                 icon={<DollarSign className="w-5 h-5" />}
                 color="from-purple-500 to-pink-600"
                 growth={growth.commission}
               />
               <StatCard 
                 title="Pending Amount" 
-                value={`₹${Number(summary.pendingAmount || 0).toLocaleString()}`}
+                value={fmtINR(summary.pendingAmount || 0)}
                 icon={<ClockIcon className="w-5 h-5" />}
                 color="from-amber-500 to-orange-600"
               />
               <StatCard 
                 title="Approved Amount" 
-                value={`₹${Number(summary.approvedAmount || 0).toLocaleString()}`}
+                value={fmtINR(summary.approvedAmount || 0)}
                 icon={<CheckCircle className="w-5 h-5" />}
                 color="from-indigo-500 to-purple-600"
               />
               <StatCard 
                 title="Conversion Rate" 
-                value={`${summary.conversionsTotal > 0 ? ((summary.conversionsTotal / summary.clicksTotal) * 100).toFixed(1) : 0}%`}
+                value={`${summary.conversionsTotal > 0 && summary.clicksTotal > 0 ? ((summary.conversionsTotal / summary.clicksTotal) * 100).toFixed(1) : 0}%`}
                 icon={<TrendingUp className="w-5 h-5" />}
                 color="from-cyan-500 to-blue-500"
               />
@@ -321,6 +407,115 @@ export default function UserAnalyticsPage() {
                 </div>
               )}
             </div>
+
+            {/* Link Performance (real data from backend) */}
+            <div className="bg-white border border-gray-200 rounded-xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <LinkIcon className="w-5 h-5 text-blue-600" />
+                    Link Performance
+                  </h3>
+                  <p className="text-gray-600 text-sm mt-1">Your generated links with clicks, conversions, and earnings</p>
+                </div>
+                <div className="text-sm text-gray-500">
+                  {linksLoading ? 'Loading...' : `${links.length} link(s)`}
+                </div>
+              </div>
+
+              {linksLoading ? (
+                <div className="space-y-2">
+                  {[...Array(4)].map((_, i) => (<div key={i} className="h-16 bg-gray-100 rounded-lg animate-pulse" />))}
+                </div>
+              ) : links.length === 0 ? (
+                <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-xl">
+                  <LinkIcon className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-gray-600">No links found</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {links.map((it, idx) => (
+                    <div key={it.subid || idx} className="border border-gray-200 rounded-xl p-4 hover:shadow-sm transition-shadow">
+                      <div className="flex items-start justify-between">
+                        <div className="min-w-0">
+                          <div className="text-xs text-gray-500">SubID</div>
+                          <div className="text-sm font-mono text-gray-900 truncate">{it.subid || '-'}</div>
+                          <div className="mt-2 text-xs text-gray-500">Share URL</div>
+                          <div className="text-sm text-gray-700 break-all line-clamp-2 sm:line-clamp-1">{it.shareUrl || '-'}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {it.shareUrl && (
+                            <>
+                              <button
+                                className="px-2 py-1.5 border border-gray-300 rounded-md text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-1"
+                                onClick={() => copyToClipboard(it.shareUrl, 'Share URL copied')}
+                                title="Copy Share URL"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                                Copy
+                              </button>
+                              <a
+                                href={it.shareUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2 py-1.5 border border-gray-300 rounded-md text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-1"
+                                title="Open Share URL"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                Open
+                              </a>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-3 gap-3">
+                        <div className="text-center">
+                          <div className="text-[11px] text-gray-500">Clicks</div>
+                          <div className="text-sm font-bold text-gray-900">{Number(it.clicks || 0).toLocaleString()}</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-[11px] text-gray-500">Conversions</div>
+                          <div className="text-sm font-bold text-green-600">{Number(it.approvedConversions || 0).toLocaleString()}</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-[11px] text-gray-500">Earnings</div>
+                          <div className="text-sm font-bold text-purple-600">{fmtINR(it.approvedCommissionSum || 0)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Top lists */}
+              {!linksLoading && links.length > 0 && (
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="border border-gray-200 rounded-xl p-4">
+                    <h4 className="font-semibold text-gray-900 mb-3">Top by Earnings</h4>
+                    <ul className="space-y-2">
+                      {topLinksByEarnings.map((l, i) => (
+                        <li key={l.subid || i} className="flex items-center justify-between text-sm">
+                          <span className="truncate max-w-[60%] font-mono">{l.subid}</span>
+                          <span className="font-bold text-purple-600">{fmtINR(l.approvedCommissionSum || 0)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="border border-gray-200 rounded-xl p-4">
+                    <h4 className="font-semibold text-gray-900 mb-3">Top by Clicks</h4>
+                    <ul className="space-y-2">
+                      {topLinksByClicks.map((l, i) => (
+                        <li key={l.subid || i} className="flex items-center justify-between text-sm">
+                          <span className="truncate max-w-[60%] font-mono">{l.subid}</span>
+                          <span className="font-bold text-gray-900">{Number(l.clicks || 0).toLocaleString()}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Right Column */}
@@ -342,13 +537,13 @@ export default function UserAnalyticsPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">Avg. Daily Clicks</span>
                   <span className="font-medium text-gray-900">
-                    {chartData.length > 0 ? Math.round(summary.clicksTotal / chartData.length) : 0}
+                    {chartData.length > 0 ? Math.round((summary.clicksTotal || 0) / chartData.length) : 0}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">Avg. Daily Commission</span>
                   <span className="font-medium text-gray-900">
-                    ₹{chartData.length > 0 ? Math.round(summary.commissionTotal / chartData.length) : 0}
+                    {fmtINR(chartData.length > 0 ? Math.round((summary.commissionTotal || 0) / chartData.length) : 0)}
                   </span>
                 </div>
               </div>
@@ -358,27 +553,9 @@ export default function UserAnalyticsPage() {
             <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-6">
               <h3 className="font-bold text-gray-900 mb-4">Growth Insights</h3>
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-700">Clicks Growth</span>
-                  <div className={`flex items-center gap-1 ${growth.clicks > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {growth.clicks > 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
-                    <span className="font-medium">{Math.abs(growth.clicks)}%</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-700">Conversions Growth</span>
-                  <div className={`flex items-center gap-1 ${growth.conversions > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {growth.conversions > 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
-                    <span className="font-medium">{Math.abs(growth.conversions)}%</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-700">Revenue Growth</span>
-                  <div className={`flex items-center gap-1 ${growth.commission > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {growth.commission > 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
-                    <span className="font-medium">{Math.abs(growth.commission)}%</span>
-                  </div>
-                </div>
+                <GrowthRow label="Clicks Growth" value={growth.clicks} />
+                <GrowthRow label="Conversions Growth" value={growth.conversions} />
+                <GrowthRow label="Revenue Growth" value={growth.commission} />
               </div>
             </div>
 
@@ -410,8 +587,8 @@ export default function UserAnalyticsPage() {
 }
 
 function StatCard({ title, value, icon, color, growth }) {
-  const isPositive = growth > 0
-  const hasGrowth = growth !== undefined
+  const isPositive = Number(growth) > 0
+  const hasGrowth = typeof growth === 'number'
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-all">
@@ -429,6 +606,19 @@ function StatCard({ title, value, icon, color, growth }) {
       </div>
       <div className="text-xl font-bold text-gray-900">{typeof value === 'number' ? value.toLocaleString() : value}</div>
       <div className="text-sm text-gray-500 mt-1">{title}</div>
+    </div>
+  )
+}
+
+function GrowthRow({ label, value }) {
+  const positive = Number(value) > 0
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-gray-700">{label}</span>
+      <div className={`flex items-center gap-1 ${positive ? 'text-green-600' : 'text-red-600'}`}>
+        {positive ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+        <span className="font-medium">{Math.abs(Number(value)).toFixed(1)}%</span>
+      </div>
     </div>
   )
 }

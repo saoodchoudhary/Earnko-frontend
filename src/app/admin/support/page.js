@@ -1,12 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'react-hot-toast'
 import { 
   MessageSquare, Search, Filter, Eye, RefreshCw, 
   AlertCircle, CheckCircle, Clock, XCircle, MoreVertical,
-  User, Mail, Calendar, ArrowUpRight, Download,
+  User, Mail, Calendar, Download,
   ChevronLeft, ChevronRight
 } from 'lucide-react'
 
@@ -37,11 +37,68 @@ export default function AdminSupportPage() {
 
   const totalPages = useMemo(() => Math.max(Math.ceil(total / limit), 1), [total, limit])
 
+  const envWarned = useRef(false)
+  const [actionLoadingId, setActionLoadingId] = useState(null)
+  const [openMenuId, setOpenMenuId] = useState(null)
+
+  const getBase = () => process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getHeaders = () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    return { Authorization: token ? `Bearer ${token}` : '' }
+  }
+  const ensureEnvConfigured = () => {
+    const base = getBase()
+    if (!base && !envWarned.current) {
+      envWarned.current = true
+      toast.error('Backend URL not configured. Set NEXT_PUBLIC_BACKEND_URL')
+    }
+  }
+  const handleHttpError = async (res) => {
+    let message = 'Request failed'
+    try {
+      const data = await res.clone().json()
+      if (data?.message) message = data.message
+    } catch {}
+    if (res.status === 401) message = 'Unauthorized. Please login again.'
+    if (res.status === 403) message = 'Forbidden. Admin access required.'
+    throw new Error(message)
+  }
+
+  const loadStatusTotals = async () => {
+    try {
+      ensureEnvConfigured()
+      const base = getBase()
+      const headers = getHeaders()
+      const statuses = ['open','in_progress','resolved','closed']
+      const reqs = statuses.map(s => fetch(`${base}/api/admin/support/tickets?status=${s}&limit=1`, { headers }))
+      const resArr = await Promise.all(reqs)
+      for (const r of resArr) { if (!r.ok) await handleHttpError(r) }
+      const dataArr = await Promise.all(resArr.map(r => r.json().catch(() => ({}))))
+      const totals = {}
+      statuses.forEach((s, i) => { totals[s] = Number(dataArr[i]?.data?.total || 0) })
+      // Also total across all
+      const rAll = await fetch(`${base}/api/admin/support/tickets?limit=1`, { headers })
+      if (!rAll.ok) await handleHttpError(rAll)
+      const jAll = await rAll.json().catch(() => ({}))
+      setStats({
+        open: totals.open || 0,
+        in_progress: totals.in_progress || 0,
+        resolved: totals.resolved || 0,
+        closed: totals.closed || 0,
+        total: Number(jAll?.data?.total || 0)
+      })
+    } catch (err) {
+      toast.error(err.message || 'Failed to load ticket stats')
+    }
+  }
+
   const loadTickets = async (showLoading = true) => {
     try {
+      ensureEnvConfigured()
       if (showLoading) setLoading(true)
-      const token = localStorage.getItem('token')
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      const base = getBase()
+      const headers = getHeaders()
+
       const params = new URLSearchParams({ 
         page: String(page), 
         limit: String(limit) 
@@ -49,30 +106,15 @@ export default function AdminSupportPage() {
       if (q) params.set('q', q)
       if (status) params.set('status', status)
 
-      const res = await fetch(`${base}/api/admin/support/tickets?${params}`, {
-        headers: { Authorization: token ? `Bearer ${token}` : '' }
-      })
+      const res = await fetch(`${base}/api/admin/support/tickets?${params.toString()}`, { headers })
+      if (!res.ok) await handleHttpError(res)
       const data = await res.json()
-      if (!res.ok) throw new Error(data?.message || 'Failed to load tickets')
       
-      setItems(data?.data?.items || [])
-      setTotal(data?.data?.total || 0)
-      
-      // Load stats
-      const statsRes = await fetch(`${base}/api/admin/support/tickets/stats`, {
-        headers: { Authorization: token ? `Bearer ${token}` : '' }
-      })
-      if (statsRes.ok) {
-        const statsData = await statsRes.json()
-        setStats(statsData.data || {
-          open: 0,
-          in_progress: 0,
-          resolved: 0,
-          closed: 0,
-          total: 0
-        })
-      }
+      setItems(Array.isArray(data?.data?.items) ? data.data.items : [])
+      setTotal(Number(data?.data?.total || 0))
 
+      // Refresh global totals (backend-supported)
+      loadStatusTotals()
     } catch (err) {
       toast.error(err.message || 'Error loading tickets')
     } finally {
@@ -83,6 +125,7 @@ export default function AdminSupportPage() {
 
   useEffect(() => {
     loadTickets()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, status, page, limit])
 
   const refreshData = () => {
@@ -108,10 +151,37 @@ export default function AdminSupportPage() {
     toast.success('Tickets exported successfully')
   }
 
-  const handleStatusChange = (ticketId, newStatus) => {
-    // Implement status update logic here
-    toast.success(`Ticket status updated to ${newStatus}`)
-    refreshData()
+  const handleStatusChange = async (ticketId, newStatus) => {
+    try {
+      ensureEnvConfigured()
+      setActionLoadingId(ticketId)
+      const base = getBase()
+      const headers = { 'Content-Type': 'application/json', ...getHeaders() }
+      const allowed = ['open','in_progress','resolved','closed']
+      if (!allowed.includes(newStatus)) throw new Error('Invalid status')
+
+      const res = await fetch(`${base}/api/admin/support/tickets/${ticketId}/status`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ status: newStatus })
+      })
+      if (!res.ok) await handleHttpError(res)
+      const js = await res.json()
+      const updatedTicket = js?.data?.ticket
+      if (!updatedTicket || updatedTicket.status !== newStatus) {
+        throw new Error('Status update did not persist')
+      }
+
+      setItems(prev => prev.map(t => (t._id === ticketId ? updatedTicket : t)))
+      setOpenMenuId(null)
+      toast.success(`Ticket status updated to ${newStatus.replace('_',' ')}`)
+      // Refresh totals in background
+      loadStatusTotals()
+    } catch (err) {
+      toast.error(err.message || 'Failed to update status')
+    } finally {
+      setActionLoadingId(null)
+    }
   }
 
   return (
@@ -143,35 +213,31 @@ export default function AdminSupportPage() {
         </div>
       </div>
 
-      {/* Stats Overview */}
+      {/* Stats Overview (computed from backend totals) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard 
           title="Open Tickets" 
           value={stats.open}
           icon={<AlertCircle className="w-5 h-5" />}
           color="from-blue-500 to-blue-600"
-          change="+5 today"
         />
         <StatCard 
           title="In Progress" 
           value={stats.in_progress}
           icon={<Clock className="w-5 h-5" />}
           color="from-amber-500 to-orange-600"
-          change="+2 today"
         />
         <StatCard 
           title="Resolved" 
           value={stats.resolved}
           icon={<CheckCircle className="w-5 h-5" />}
           color="from-green-500 to-emerald-600"
-          change="+8 today"
         />
         <StatCard 
           title="Closed" 
           value={stats.closed}
           icon={<XCircle className="w-5 h-5" />}
           color="from-gray-600 to-gray-800"
-          change="+3 today"
         />
       </div>
 
@@ -270,7 +336,7 @@ export default function AdminSupportPage() {
                           <div className="text-sm text-gray-500 mt-1 flex items-center gap-2">
                             <span className="flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
-                              {new Date(ticket.createdAt).toLocaleDateString()}
+                              {ticket.createdAt ? new Date(ticket.createdAt).toLocaleDateString() : '-'}
                             </span>
                             <span className="text-gray-300">•</span>
                             <span className="font-mono text-xs">
@@ -311,10 +377,10 @@ export default function AdminSupportPage() {
                     
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-900">
-                        {new Date(ticket.updatedAt).toLocaleDateString()}
+                        {ticket.updatedAt ? new Date(ticket.updatedAt).toLocaleDateString() : '-'}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {new Date(ticket.updatedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        {ticket.updatedAt ? new Date(ticket.updatedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-'}
                       </div>
                     </td>
                     
@@ -328,28 +394,38 @@ export default function AdminSupportPage() {
                           View
                         </Link>
                         
-                        <div className="relative group">
-                          <button className="p-1.5 hover:bg-gray-100 rounded-lg">
+                        <div className="relative" onMouseLeave={() => setOpenMenuId(null)}>
+                          <button
+                            onClick={() => setOpenMenuId(openMenuId === ticket._id ? null : ticket._id)}
+                            className="p-1.5 hover:bg-gray-100 rounded-lg"
+                            aria-haspopup="menu"
+                            aria-expanded={openMenuId === ticket._id}
+                          >
                             <MoreVertical className="w-4 h-4 text-gray-600" />
                           </button>
                           
-                          <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
+                          <div className={`absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg transition-all duration-200 z-10 ${
+                            openMenuId === ticket._id ? 'opacity-100 visible' : 'opacity-0 invisible'
+                          }`}>
                             <div className="py-1">
                               <button 
                                 onClick={() => handleStatusChange(ticket._id, 'in_progress')}
-                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                disabled={actionLoadingId === ticket._id}
+                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                               >
                                 Mark as In Progress
                               </button>
                               <button 
                                 onClick={() => handleStatusChange(ticket._id, 'resolved')}
-                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                disabled={actionLoadingId === ticket._id}
+                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                               >
                                 Mark as Resolved
                               </button>
                               <button 
                                 onClick={() => handleStatusChange(ticket._id, 'closed')}
-                                className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                                disabled={actionLoadingId === ticket._id}
+                                className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
                               >
                                 Close Ticket
                               </button>
@@ -431,20 +507,15 @@ export default function AdminSupportPage() {
   )
 }
 
-function StatCard({ title, value, icon, color, change }) {
+function StatCard({ title, value, icon, color }) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-all">
       <div className="flex items-center justify-between mb-3">
         <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${color} flex items-center justify-center text-white`}>
           {icon}
         </div>
-        {change && (
-          <div className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-1 rounded-full">
-            {change}
-          </div>
-        )}
       </div>
-      <div className="text-2xl font-bold text-gray-900">{value.toLocaleString()}</div>
+      <div className="text-2xl font-bold text-gray-900">{Number(value || 0).toLocaleString()}</div>
       <div className="text-sm text-gray-500 mt-1">{title}</div>
     </div>
   )

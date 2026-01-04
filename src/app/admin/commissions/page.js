@@ -4,10 +4,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import Link from 'next/link'
 import {
-  Search, Filter, RefreshCw, DollarSign, CheckCircle,
+  Search, RefreshCw, DollarSign, CheckCircle,
   XCircle, AlertCircle, Clock, Eye, ChevronLeft,
-  ChevronRight, Download, User, CreditCard,
-  TrendingUp, ArrowUpRight, BarChart3
+  ChevronRight, Download, CreditCard, TrendingUp, ArrowUpRight
 } from 'lucide-react'
 
 const STATUS_OPTIONS = [
@@ -37,52 +36,69 @@ export default function AdminCommissionsPage() {
     revenue: 0
   })
 
+  const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null)
   const totalPages = useMemo(() => Math.max(Math.ceil(total / limit), 1), [total, limit])
+
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      try { return await res.json() } catch { return null }
+    }
+    const txt = await res.text().catch(() => '')
+    return { success: false, message: txt }
+  }
 
   const loadData = async (showLoading = true) => {
     try {
+      if (!base) {
+        toast.error('NEXT_PUBLIC_BACKEND_URL not set')
+        setItems([]); setTotal(0); setStats({ pending:0, approved:0, paid:0, total:0, revenue:0 })
+        return
+      }
       if (showLoading) setLoading(true)
-      const token = localStorage.getItem('token')
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      const token = getToken()
       const params = new URLSearchParams({ page: String(page), limit: String(limit) })
       if (status) params.set('status', status)
       if (searchQuery) params.set('q', searchQuery)
 
-      // Load commissions
       const res = await fetch(`${base}/api/admin/commissions?${params.toString()}`, {
         headers: { Authorization: token ? `Bearer ${token}` : '' }
       })
-
-      let data
-      try {
-        data = await res.json()
-      } catch {
-        data = null
-      }
-
+      const data = await safeJson(res)
       if (!res.ok) {
         const msg = data?.message || `Failed to load commissions (HTTP ${res.status})`
-        throw new Error(msg)
+        if ((data?.message || '').startsWith('<!DOCTYPE') || (data?.message || '').includes('<html')) {
+          toast.error('Received HTML from API. Check backend URL.')
+        } else {
+          toast.error(msg)
+        }
+        setItems([]); setTotal(0); setStats({ pending:0, approved:0, paid:0, total:0, revenue:0 })
+        return
       }
 
-      // Parse response data
       const list = data?.data?.commissions || data?.data?.items || data?.commissions || data?.items || []
       const totalCount = data?.data?.total ?? data?.data?.totalItems ?? (Array.isArray(list) ? list.length : 0)
 
-      setItems(Array.isArray(list) ? list : [])
+      const arr = Array.isArray(list) ? list : []
+      setItems(arr)
       setTotal(Number(totalCount) || 0)
 
-      // Load stats if available
       if (data?.data?.stats) {
-        setStats(data.data.stats)
+        setStats({
+          pending: Number(data.data.stats.pending || 0),
+          approved: Number(data.data.stats.approved || 0),
+          paid: Number(data.data.stats.paid || 0),
+          total: Number(data.data.stats.total || totalCount || 0),
+          revenue: Number(data.data.stats.revenue || 0),
+        })
       } else {
-        // Calculate basic stats from items
         const statsData = {
-          pending: list.filter(c => c.status === 'pending').length,
-          approved: list.filter(c => c.status === 'approved').length,
-          paid: list.filter(c => c.status === 'paid').length,
-          total: totalCount,
-          revenue: list.reduce((sum, c) => sum + (c.amount || 0), 0)
+          pending: arr.filter(c => c.status === 'pending').length,
+          approved: arr.filter(c => c.status === 'approved').length,
+          paid: arr.filter(c => c.status === 'paid').length,
+          total: Number(totalCount) || arr.length,
+          revenue: arr.reduce((sum, c) => sum + Number(c.amount || c.commissionAmount || 0), 0)
         }
         setStats(statsData)
       }
@@ -96,6 +112,7 @@ export default function AdminCommissionsPage() {
 
   useEffect(() => {
     loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, searchQuery, page, limit])
 
   const refreshData = () => {
@@ -105,22 +122,24 @@ export default function AdminCommissionsPage() {
 
   const approve = async (id) => {
     try {
+      if (!base) { toast.error('NEXT_PUBLIC_BACKEND_URL not set'); return }
       setBusyId(id)
-      const token = localStorage.getItem('token')
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      const token = getToken()
       const res = await fetch(`${base}/api/admin/commissions/${id}/approve`, {
         method: 'PUT',
         headers: { Authorization: token ? `Bearer ${token}` : '' }
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.message || `Approve failed (HTTP ${res.status})`)
+      const data = await safeJson(res)
+      if (!res.ok) {
+        const msg = data?.message || `Approve failed (HTTP ${res.status})`
+        toast.error(msg)
+        return
+      }
       toast.success('Commission approved successfully')
-      // Update item status
       setItems(prev => prev.map(c => (c._id === id ? { ...c, status: 'approved' } : c)))
-      // Update stats
       setStats(prev => ({
         ...prev,
-        pending: prev.pending - 1,
+        pending: Math.max(0, prev.pending - 1),
         approved: prev.approved + 1
       }))
     } catch (err) {
@@ -132,18 +151,21 @@ export default function AdminCommissionsPage() {
 
   const reverse = async (id) => {
     try {
+      if (!base) { toast.error('NEXT_PUBLIC_BACKEND_URL not set'); return }
       setBusyId(id)
-      const token = localStorage.getItem('token')
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      const token = getToken()
       const res = await fetch(`${base}/api/admin/commissions/${id}/reverse`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
         body: JSON.stringify({ reason: 'manual_admin_reversal' })
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.message || `Reverse failed (HTTP ${res.status})`)
+      const data = await safeJson(res)
+      if (!res.ok) {
+        const msg = data?.message || `Reverse failed (HTTP ${res.status})`
+        toast.error(msg)
+        return
+      }
       toast.success('Commission reversed successfully')
-      // Update item status
       setItems(prev => prev.map(c => (c._id === id ? { ...c, status: 'reversed' } : c)))
     } catch (err) {
       toast.error(err.message || 'Error reversing commission')
@@ -153,19 +175,20 @@ export default function AdminCommissionsPage() {
   }
 
   const exportData = () => {
-    const exportData = items.map(item => ({
+    const exportRows = (Array.isArray(items) ? items : []).map(item => ({
       'Order ID': item.transaction?.orderId || '',
       'Affiliate': item.affiliate?.name || '',
       'Email': item.affiliate?.email || '',
-      'Amount': `₹${item.amount || 0}`,
+      'Amount': `₹${Number(item.amount || item.commissionAmount || 0)}`,
       'Status': item.status || '',
       'Date': item.createdAt ? new Date(item.createdAt).toLocaleString() : '',
       'Store': item.store?.name || ''
     }))
 
+    const headers = Object.keys(exportRows[0] || {})
     const csv = [
-      Object.keys(exportData[0] || {}).join(','),
-      ...exportData.map(row => Object.values(row).join(','))
+      headers.join(','),
+      ...exportRows.map(row => headers.map(h => String(row[h]).replace(/,/g, ' ')).join(','))
     ].join('\n')
 
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -185,9 +208,9 @@ export default function AdminCommissionsPage() {
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Commission Management</h1>
-            <p className="text-gray-600 mt-1">Manage and track affiliate commissions</p>
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">Commission Management</h1>
+            <p className="text-gray-600 mt-1 text-sm">Manage and track affiliate commissions</p>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -236,7 +259,7 @@ export default function AdminCommissionsPage() {
         />
         <StatCard
           title="Total Revenue"
-          value={`₹${stats.revenue.toLocaleString()}`}
+          value={`₹${Number(stats.revenue || 0).toLocaleString()}`}
           icon={<TrendingUp className="w-5 h-5" />}
           color="from-blue-600 to-blue-800"
         />
@@ -246,7 +269,7 @@ export default function AdminCommissionsPage() {
       <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-gray-400"
               placeholder="Search order ID or affiliate..."
@@ -325,11 +348,11 @@ export default function AdminCommissionsPage() {
                       <div className="w-8 h-8 rounded-full bg-gray-800 text-white flex items-center justify-center font-bold text-sm">
                         {commission.affiliate?.name?.charAt(0)?.toUpperCase() || 'A'}
                       </div>
-                      <div>
-                        <div className="font-medium text-gray-900">
+                      <div className="min-w-0">
+                        <div className="font-medium text-gray-900 truncate">
                           {commission.affiliate?.name || 'Unknown'}
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-gray-500 truncate">
                           {commission.affiliate?.email || ''}
                         </div>
                       </div>
@@ -345,7 +368,7 @@ export default function AdminCommissionsPage() {
                   </Td>
                   <Td>
                     <div className="text-lg font-bold text-gray-900">
-                      ₹{Number(commission.amount || 0).toLocaleString()}
+                      ₹{Number(commission.amount || commission.commissionAmount || 0).toLocaleString()}
                     </div>
                     <div className="text-xs text-gray-500">
                       {commission.commissionRate ? `${commission.commissionRate}%` : ''}
@@ -359,7 +382,7 @@ export default function AdminCommissionsPage() {
                       {commission.createdAt ? new Date(commission.createdAt).toLocaleDateString() : '-'}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {commission.createdAt ? new Date(commission.createdAt).toLocaleTimeString() : ''}
+                      {commission.createdAt ? new Date(commission.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                     </div>
                   </Td>
                   <Td>
@@ -395,7 +418,7 @@ export default function AdminCommissionsPage() {
                       )}
                       
                       <button
-                        onClick={() => {/* View details */}}
+                        onClick={() => {/* Optionally navigate to a commission detail page */}}
                         className="px-3 py-1.5 border border-gray-300 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1"
                       >
                         <Eye className="w-3 h-3" />
@@ -413,7 +436,7 @@ export default function AdminCommissionsPage() {
       {/* Pagination */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
         <div className="text-sm text-gray-600">
-          Showing {((page - 1) * limit) + 1} to {Math.min(page * limit, total)} of {total} commissions
+          Showing {Math.min(((page - 1) * limit) + 1, total)} to {Math.min(page * limit, total)} of {total} commissions
         </div>
         
         <div className="flex items-center gap-2">
@@ -485,9 +508,7 @@ function StatusBadge({ status }) {
     reversed: { color: 'bg-rose-100 text-rose-800 border-rose-200', icon: <XCircle className="w-3 h-3" /> },
     under_review: { color: 'bg-blue-100 text-blue-800 border-blue-200', icon: <AlertCircle className="w-3 h-3" /> },
   }
-
   const config = statusMap[status] || { color: 'bg-gray-100 text-gray-800 border-gray-200', icon: null }
-
   return (
     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${config.color}`}>
       {config.icon}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'react-hot-toast'
 import StoreForm from '../../../../components/admin/StoreForm'
@@ -9,27 +9,48 @@ import { ArrowLeft, Store, Plus } from 'lucide-react'
 export default function AdminStoreCreatePage() {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
+  const envWarned = useRef(false)
+
+  const getBase = () => process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getHeaders = () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    return {
+      'Content-Type': 'application/json',
+      Authorization: token ? `Bearer ${token}` : '',
+    }
+  }
+  const ensureEnvConfigured = () => {
+    const base = getBase()
+    if (!base && !envWarned.current) {
+      envWarned.current = true
+      toast.error('Backend URL not configured. Set NEXT_PUBLIC_BACKEND_URL')
+    }
+  }
+  const handleHttpError = async (res) => {
+    let message = 'Request failed'
+    try {
+      const js = await res.clone().json()
+      if (js?.message) message = js.message
+    } catch {}
+    if (res.status === 401) message = 'Unauthorized. Please login again.'
+    if (res.status === 403) message = 'Forbidden. Admin access required.'
+    throw new Error(message)
+  }
 
   const handleSubmit = async (payload) => {
     try {
+      ensureEnvConfigured()
       setSaving(true)
-      const token = localStorage.getItem('token')
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/stores`, {
+      const base = getBase()
+      const res = await fetch(`${base}/api/admin/stores`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          Authorization: token ? `Bearer ${token}` : '' 
-        },
-        body: JSON.stringify(payload)
+        headers: getHeaders(),
+        body: JSON.stringify(payload),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.message || 'Failed to create store')
-      
-      toast.success('Store created successfully!', {
-        icon: '✅',
-        duration: 3000
-      })
-      
+      if (!res.ok) await handleHttpError(res)
+      await res.json()
+
+      toast.success('Store created successfully!')
       router.push('/admin/stores')
     } catch (err) {
       toast.error(err.message || 'Failed to create store')
@@ -56,7 +77,7 @@ export default function AdminStoreCreatePage() {
               >
                 <ArrowLeft className="w-5 h-5 text-gray-600" />
               </button>
-              
+
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center">
                   <Store className="w-5 h-5 text-white" />
@@ -67,7 +88,7 @@ export default function AdminStoreCreatePage() {
                 </div>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-2">
               <button
                 onClick={handleCancel}
@@ -76,7 +97,7 @@ export default function AdminStoreCreatePage() {
                 Cancel
               </button>
               <button
-                onClick={() => document.querySelector('form')?.requestSubmit()}
+                onClick={() => document.getElementById('store-form')?.requestSubmit()}
                 disabled={saving}
                 className="px-4 py-2 bg-gray-800 text-white font-semibold rounded-lg hover:bg-gray-900 transition-colors flex items-center gap-2 disabled:opacity-50"
               >
@@ -91,67 +112,8 @@ export default function AdminStoreCreatePage() {
       {/* Main Content */}
       <div className="container mx-auto px-4 py-6">
         <div className="max-w-4xl mx-auto">
-          {/* Information Card */}
-          <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                <div className="w-4 h-4 text-blue-600">i</div>
-              </div>
-              <div>
-                <h3 className="font-medium text-gray-900 mb-2">Store Setup Guide</h3>
-                <ul className="text-sm text-gray-600 space-y-2">
-                  <li className="flex items-start gap-2">
-                    <div className="w-1.5 h-1.5 bg-gray-400 rounded-full mt-1.5 flex-shrink-0"></div>
-                    <span>Fill in the store details including base URL and tracking information</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <div className="w-1.5 h-1.5 bg-gray-400 rounded-full mt-1.5 flex-shrink-0"></div>
-                    <span>Set appropriate commission rates based on the affiliate network</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <div className="w-1.5 h-1.5 bg-gray-400 rounded-full mt-1.5 flex-shrink-0"></div>
-                    <span>Configure cookie duration for proper attribution tracking</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <div className="w-1.5 h-1.5 bg-gray-400 rounded-full mt-1.5 flex-shrink-0"></div>
-                    <span>Test the tracking URL before making the store active</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-
-          {/* Store Form */}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <StoreForm 
-              onSubmit={handleSubmit} 
-              submitting={saving}
-              onCancel={handleCancel}
-            />
-          </div>
-
-          {/* Quick Tips */}
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <div className="text-sm font-medium text-gray-900 mb-2">Network Selection</div>
-              <div className="text-xs text-gray-600">
-                Choose the appropriate affiliate network for proper tracking and reporting
-              </div>
-            </div>
-            
-            <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <div className="text-sm font-medium text-gray-900 mb-2">Commission Rates</div>
-              <div className="text-xs text-gray-600">
-                Set competitive rates while maintaining platform profitability
-              </div>
-            </div>
-            
-            <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <div className="text-sm font-medium text-gray-900 mb-2">Cookie Duration</div>
-              <div className="text-xs text-gray-600">
-                Match with network standards for consistent attribution (typically 30-90 days)
-              </div>
-            </div>
+            <StoreForm onSubmit={handleSubmit} submitting={saving} onCancel={handleCancel} />
           </div>
         </div>
       </div>

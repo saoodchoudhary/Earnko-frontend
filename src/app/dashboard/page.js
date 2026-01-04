@@ -4,12 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'react-hot-toast';
-import { 
-  TrendingUp, Link as LinkIcon, Wallet, Zap, BarChart3, 
-  Users, ExternalLink, ArrowRight, ChevronRight, Filter,
-  Clock, DollarSign, Target, Eye, CheckCircle, 
-  Sparkles, Bell, Settings, Calendar, TrendingUp as TrendingIcon,
-  Gift, Store, CreditCard, RefreshCw, MoreVertical
+import {
+  TrendingUp, Link as LinkIcon, Wallet, Zap, BarChart3,
+  Users, ArrowRight, ChevronRight,
+  Clock, DollarSign, Target, Eye, CheckCircle,
+  Calendar, Gift, Store as StoreIcon, CreditCard, RefreshCw, MoreVertical
 } from 'lucide-react';
 
 function normalizeList(obj) {
@@ -38,15 +37,32 @@ export default function DashboardPage() {
   });
   const [analyticsDaily, setAnalyticsDaily] = useState([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [analyticsRefresh, setAnalyticsRefresh] = useState(0);
+
+  const [todayClicks, setTodayClicks] = useState(0);
+  const [todayConversions, setTodayConversions] = useState(0);
+  const [todayCommission, setTodayCommission] = useState(0);
 
   const [loadingMe, setLoadingMe] = useState(true);
   const [loadingWallet, setLoadingWallet] = useState(true);
   const [loadingLinks, setLoadingLinks] = useState(true);
   const [loadingOffers, setLoadingOffers] = useState(true);
 
+  const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+  const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      try { return await res.json(); } catch { return null; }
+    }
+    const txt = await res.text().catch(() => '');
+    return { success: false, message: txt };
+  };
+
   // Guard: if not logged in, redirect to login
   useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const token = getToken();
     if (!token) router.replace('/login?next=/dashboard');
   }, [router]);
 
@@ -55,88 +71,110 @@ export default function DashboardPage() {
     const controller = new AbortController();
     async function loadUser() {
       try {
-        const token = localStorage.getItem('token');
-        const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
-
+        if (!base) { toast.error('Backend URL not configured'); return; }
+        const token = getToken();
         setLoadingMe(true);
         const rMe = await fetch(`${base}/api/auth/me`, {
           signal: controller.signal,
           headers: { Authorization: token ? `Bearer ${token}` : '' }
         });
-        const dMe = await rMe.json();
-        if (rMe.ok) setMe(dMe?.data?.user || dMe?.data || null);
-      } catch {}
-      finally { setLoadingMe(false); }
+        const dMe = await safeJson(rMe);
+        if (!rMe.ok) {
+          const msg = dMe?.message || `Failed to load profile (HTTP ${rMe.status})`;
+          toast.error(msg);
+          return;
+        }
+        setMe(dMe?.data?.user || dMe?.data || null);
+      } catch (err) {
+        if (err?.name !== 'AbortError') toast.error('Error loading profile');
+      } finally { setLoadingMe(false); }
     }
     loadUser();
     return () => controller.abort();
-  }, []);
+  }, [base]);
 
   // Load wallet
   useEffect(() => {
     const controller = new AbortController();
     async function loadWallet() {
       try {
-        const token = localStorage.getItem('token');
-        const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+        if (!base) { toast.error('Backend URL not configured'); return; }
+        const token = getToken();
         setLoadingWallet(true);
         const r = await fetch(`${base}/api/wallet/me`, {
           signal: controller.signal,
           headers: { Authorization: token ? `Bearer ${token}` : '' }
         });
-        const d = await r.json();
-        if (r.ok) setWallet(d?.data?.wallet || null);
-      } catch {}
-      finally { setLoadingWallet(false); }
+        const d = await safeJson(r);
+        if (!r.ok) {
+          const msg = d?.message || `Failed to load wallet (HTTP ${r.status})`;
+          toast.error(msg);
+          return;
+        }
+        setWallet(d?.data?.wallet || null);
+      } catch (err) {
+        if (err?.name !== 'AbortError') toast.error('Error loading wallet');
+      } finally { setLoadingWallet(false); }
     }
     loadWallet();
     return () => controller.abort();
-  }, []);
+  }, [base]);
 
   // Load links (for recent list)
   useEffect(() => {
     const controller = new AbortController();
     async function loadLinks() {
       try {
-        const token = localStorage.getItem('token');
-        const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+        if (!base) { toast.error('Backend URL not configured'); return; }
+        const token = getToken();
         setLoadingLinks(true);
         const rLinks = await fetch(`${base}/api/user/links`, {
           signal: controller.signal,
           headers: { Authorization: token ? `Bearer ${token}` : '' }
         });
-        const dLinks = await rLinks.json();
-        if (rLinks.ok) setLinks(normalizeList(dLinks?.data));
-      } catch {
+        const dLinks = await safeJson(rLinks);
+        if (!rLinks.ok) {
+          const msg = dLinks?.message || `Failed to load links (HTTP ${rLinks.status})`;
+          toast.error(msg);
+          setLinks([]);
+          return;
+        }
+        setLinks(normalizeList(dLinks?.data));
+      } catch (err) {
+        if (err?.name !== 'AbortError') toast.error('Error loading links');
         setLinks([]);
       } finally { setLoadingLinks(false); }
     }
     loadLinks();
     return () => controller.abort();
-  }, []);
+  }, [base]);
 
   // Load aggregated analytics for daily chart and summary
   useEffect(() => {
     const controller = new AbortController();
-    async function loadAnalytics() {
+    async function loadAnalytics30d() {
       try {
-        const token = localStorage.getItem('token');
-        const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+        if (!base) { toast.error('Backend URL not configured'); return; }
+        const token = getToken();
         setAnalyticsLoading(true);
         const r = await fetch(`${base}/api/user/analytics?range=30d`, {
           signal: controller.signal,
           headers: { Authorization: token ? `Bearer ${token}` : '' }
         });
-        const d = await r.json();
-        if (!r.ok) throw new Error(d?.message || 'Failed to load analytics');
+        const d = await safeJson(r);
+        if (!r.ok) {
+          const msg = d?.message || `Failed to load analytics (HTTP ${r.status})`;
+          toast.error(msg);
+          throw new Error(msg);
+        }
         const summary = d?.data?.summary || {};
         const daily = Array.isArray(d?.data?.daily) ? d.data.daily : [];
         setAnalyticsSummary({
-          clicksTotal: summary.clicksTotal || 0,
-          conversionsTotal: summary.conversionsTotal || 0,
-          commissionTotal: summary.commissionTotal || 0,
-          pendingAmount: summary.pendingAmount || 0,
-          approvedAmount: summary.approvedAmount || 0,
+          clicksTotal: Number(summary.clicksTotal || 0),
+          conversionsTotal: Number(summary.conversionsTotal || 0),
+          commissionTotal: Number(summary.commissionTotal || 0),
+          pendingAmount: Number(summary.pendingAmount || 0),
+          approvedAmount: Number(summary.approvedAmount || 0),
         });
         setAnalyticsDaily(daily);
       } catch (err) {
@@ -148,40 +186,104 @@ export default function DashboardPage() {
         setAnalyticsLoading(false);
       }
     }
-    loadAnalytics();
+    loadAnalytics30d();
     return () => controller.abort();
-  }, []);
+  }, [base, analyticsRefresh]);
 
-  // Offers preview
+  // Load today's analytics (real clicks, conversions, commission)
+  useEffect(() => {
+    const controller = new AbortController();
+    async function loadAnalytics1d() {
+      try {
+        if (!base) return;
+        const token = getToken();
+        const r = await fetch(`${base}/api/user/analytics?range=1d`, {
+          signal: controller.signal,
+          headers: { Authorization: token ? `Bearer ${token}` : '' }
+        });
+        const d = await safeJson(r);
+        if (!r.ok) return; // don't toast here, 30d call already toasted if backend down
+        const daily = Array.isArray(d?.data?.daily) ? d.data.daily : [];
+        const todayAgg = daily.reduce(
+          (acc, cur) => ({
+            clicks: acc.clicks + Number(cur.clicks || 0),
+            conversions: acc.conversions + Number(cur.conversions || 0),
+            commission: acc.commission + Number(cur.commission || 0),
+          }),
+          { clicks: 0, conversions: 0, commission: 0 }
+        );
+        setTodayClicks(todayAgg.clicks);
+        setTodayConversions(todayAgg.conversions);
+        setTodayCommission(todayAgg.commission);
+      } catch {
+        // silent
+      }
+    }
+    loadAnalytics1d();
+    return () => controller.abort();
+  }, [base, analyticsRefresh]);
+
+  // Offers preview (FIXED: read from data.offers per backend)
   useEffect(() => {
     const controller = new AbortController();
     async function loadOffers() {
       try {
-        const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+        if (!base) { toast.error('Backend URL not configured'); return; }
         setLoadingOffers(true);
-        const params = new URLSearchParams({ limit: '8' });
+        const params = new URLSearchParams({ limit: '12' });
         const r = await fetch(`${base}/api/public/offers?${params.toString()}`, { signal: controller.signal });
-        const d = await r.json();
-        setOffers(normalizeList(d));
-      } catch {
+        const d = await safeJson(r);
+        if (!r.ok) {
+          const msg = d?.message || `Failed to load offers (HTTP ${r.status})`;
+          toast.error(msg);
+          setOffers([]);
+          return;
+        }
+        const list = Array.isArray(d?.data?.offers)
+          ? d.data.offers
+          : Array.isArray(d?.data?.items)
+          ? d.data.items
+          : [];
+        // Sort by rate desc then updatedAt desc for nicer display
+        const sorted = [...list].sort((a, b) => {
+          const rd = (b.rate || 0) - (a.rate || 0);
+          if (rd !== 0) return rd;
+          return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+        });
+        setOffers(sorted);
+      } catch (err) {
+        if (err?.name !== 'AbortError') toast.error('Error loading offers');
         setOffers([]);
       } finally { setLoadingOffers(false); }
     }
     loadOffers();
     return () => controller.abort();
-  }, []);
+  }, [base]);
 
   const totals = useMemo(() => {
     return {
-      availableBalance: wallet?.availableBalance || 0,
-      confirmedCashback: wallet?.confirmedCashback || 0,
-      pendingCashback: wallet?.pendingCashback || 0,
-      referralEarnings: wallet?.referralEarnings || 0,
-      clicksTotal: analyticsSummary.clicksTotal || 0,
-      conversionsTotal: analyticsSummary.conversionsTotal || 0,
-      earningsApproved: analyticsSummary.approvedAmount || 0
+      availableBalance: Number(wallet?.availableBalance || 0),
+      confirmedCashback: Number(wallet?.confirmedCashback || 0),
+      pendingCashback: Number(wallet?.pendingCashback || 0),
+      referralEarnings: Number(wallet?.referralEarnings || 0),
+      clicksTotal: Number(analyticsSummary.clicksTotal || 0),
+      conversionsTotal: Number(analyticsSummary.conversionsTotal || 0),
+      earningsApproved: Number(analyticsSummary.approvedAmount || 0),
+      commissionTotal: Number(analyticsSummary.commissionTotal || 0),
+      totalWithdrawn: Number(wallet?.totalWithdrawn || 0),
     };
   }, [wallet, analyticsSummary]);
+
+  // Earnings breakdown metrics (requested)
+  const earningsBreakdown = useMemo(() => {
+    const totalEarnings = totals.confirmedCashback + totals.pendingCashback + totals.totalWithdrawn;
+    return {
+      totalEarnings,
+      redeemedEarnings: totals.totalWithdrawn,
+      pendingAmount: totals.pendingCashback,
+      availableForWithdraw: totals.availableBalance,
+    };
+  }, [totals]);
 
   const recentLinks = useMemo(() => {
     const arr = Array.isArray(links) ? [...links] : [];
@@ -193,28 +295,22 @@ export default function DashboardPage() {
 
   // Prepare bar chart from analyticsDaily
   const bars = useMemo(() => {
-    const series = Array.isArray(analyticsDaily) && analyticsDaily.length > 0
-      ? analyticsDaily
-      : [];
-    // Compute max clicks to scale bars
+    const series = Array.isArray(analyticsDaily) ? analyticsDaily : [];
     const maxClicks = series.reduce((m, d) => Math.max(m, Number(d.clicks || 0)), 0) || 1;
     return series.map(d => {
       const clicks = Number(d.clicks || 0);
-      const height = Math.max(6, Math.round((clicks / maxClicks) * 90)); // 6..90px
+      const height = Math.max(6, Math.round((clicks / maxClicks) * 90)); // 6..90%
       return { date: d.date, clicks, height, conversions: Number(d.conversions || 0) };
     });
   }, [analyticsDaily]);
 
-  // Quick actions
-  const quickActions = [
-    { icon: <Zap className="w-5 h-5" />, label: 'Generate Link', href: '/dashboard/affiliate', color: 'from-blue-500 to-cyan-500' },
-    { icon: <CreditCard className="w-5 h-5" />, label: 'Withdraw', href: '/dashboard/withdraw', color: 'from-green-500 to-emerald-500' },
-    { icon: <Users className="w-5 h-5" />, label: 'Referrals', href: '/dashboard/referrals', color: 'from-purple-500 to-pink-500' },
-    { icon: <Gift className="w-5 h-5" />, label: 'Top Offers', href: '/offers', color: 'from-amber-500 to-orange-500' },
-  ];
+  const refreshAnalytics = () => setAnalyticsRefresh(v => v + 1);
+
+  const fmtINR = (n) => `₹${Number(n || 0).toLocaleString()}`;
+  const fmtPct = (n) => `${Number(n || 0).toFixed(1)}%`;
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+    <main className="min-h-screen bg-gradient-to-b from-gray-50 to-white pb-24">
       {/* Header */}
       <section className="bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 text-white">
         <div className="container mx-auto px-4 py-8 md:py-12">
@@ -235,7 +331,7 @@ export default function DashboardPage() {
 
             {/* Quick actions */}
             <div className="flex flex-wrap gap-3">
-              <button 
+              <button
                 onClick={goGenerate}
                 className="px-6 py-3 bg-white text-blue-600 font-bold rounded-xl hover:shadow-2xl hover:scale-105 transition-all duration-300 flex items-center gap-2 group"
               >
@@ -248,13 +344,18 @@ export default function DashboardPage() {
 
           {/* Quick Actions Grid */}
           <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
-            {quickActions.map((action, index) => (
+            {[
+              { icon: <CreditCard className="w-5 h-5" />, label: 'Withdraw', href: '/dashboard/withdraw', color: 'from-green-500 to-emerald-500' },
+              { icon: <Users className="w-5 h-5" />, label: 'Referrals', href: '/dashboard/referrals', color: 'from-purple-500 to-pink-500' },
+              { icon: <Gift className="w-5 h-5" />, label: 'Top Offers', href: '/offers', color: 'from-amber-500 to-orange-500' },
+              { icon: <BarChart3 className="w-5 h-5" />, label: 'Analytics', href: '/dashboard/analytics', color: 'from-blue-500 to-cyan-500' },
+            ].map((action, index) => (
               <Link
                 key={index}
                 href={action.href}
                 className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4 hover:bg-white/20 hover:border-white/30 transition-all duration-300 group"
               >
-                <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${action.color} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300`}>
+                <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${action.color} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 text-white`}>
                   {action.icon}
                 </div>
                 <div className="font-semibold text-white">{action.label}</div>
@@ -264,35 +365,44 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      {/* Earnings Summary Row (requested) */}
+      <section className="container mx-auto px-4 -mt-6">
+        <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <BreakdownTile label="Total Earnings" value={fmtINR(earningsBreakdown.totalEarnings)} color="text-blue-700" />
+            <BreakdownTile label="Redeemed Earnings" value={fmtINR(earningsBreakdown.redeemedEarnings)} color="text-green-700" />
+            <BreakdownTile label="Pending Amount" value={fmtINR(earningsBreakdown.pendingAmount)} color="text-amber-700" />
+            <BreakdownTile label="Available For Withdraw" value={fmtINR(earningsBreakdown.availableForWithdraw)} color="text-purple-700" />
+          </div>
+        </div>
+      </section>
+
       {/* Stats Overview */}
-      <section className="container mx-auto px-4 -mt-8">
+      <section className="container mx-auto px-4 mt-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <StatCard 
-            title="Available Balance" 
+          <StatCard
+            title="Available Balance"
             value={totals.availableBalance}
             icon={<Wallet className="w-5 h-5" />}
             color="from-blue-500 to-blue-600"
-            change="+12.5%"
           />
-          <StatCard 
-            title="Confirmed Cashback" 
+          <StatCard
+            title="Confirmed Cashback"
             value={totals.confirmedCashback}
             icon={<CheckCircle className="w-5 h-5" />}
             color="from-green-500 to-emerald-600"
-            change="+8.2%"
           />
-          <StatCard 
-            title="Pending Cashback" 
+          <StatCard
+            title="Pending Cashback"
             value={totals.pendingCashback}
             icon={<Clock className="w-5 h-5" />}
             color="from-amber-500 to-orange-600"
           />
-          <StatCard 
-            title="Referral Earnings" 
+          <StatCard
+            title="Referral Earnings"
             value={totals.referralEarnings}
             icon={<Users className="w-5 h-5" />}
             color="from-purple-500 to-pink-600"
-            change="+15.3%"
           />
         </div>
       </section>
@@ -317,33 +427,58 @@ export default function DashboardPage() {
                     <Calendar className="w-3 h-3 inline mr-1" />
                     Last 30 days
                   </div>
-                  <button className="p-2 hover:bg-gray-100 rounded-lg">
-                    <Filter className="w-4 h-4 text-gray-600" />
+                  <button className="p-2 hover:bg-gray-100 rounded-lg" onClick={refreshAnalytics} title="Refresh analytics">
+                    <RefreshCw className="w-4 h-4 text-gray-600" />
                   </button>
                 </div>
               </div>
 
-              {/* Performance Metrics Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
-                <MiniStat 
-                  label="Total Clicks" 
-                  value={totals.clicksTotal} 
+              {/* Real-time Today Summary */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <MiniStat
+                  label="Today's Clicks"
+                  value={todayClicks}
                   icon={<Eye className="w-4 h-4" />}
-                  change="+8.2%"
                   color="blue"
                 />
-                <MiniStat 
-                  label="Conversions" 
-                  value={totals.conversionsTotal} 
+                <MiniStat
+                  label="Today's Conversions"
+                  value={todayConversions}
                   icon={<Target className="w-4 h-4" />}
-                  change="+3.5%"
                   color="green"
                 />
-                <MiniStat 
-                  label="Earnings" 
-                  value={`₹${Number(totals.earningsApproved || 0).toLocaleString()}`}
+                <MiniStat
+                  label="Today's Earnings"
+                  value={fmtINR(todayCommission)}
                   icon={<DollarSign className="w-4 h-4" />}
-                  change="+12.5%"
+                  color="purple"
+                />
+                <MiniStat
+                  label="Conversion Rate"
+                  value={fmtPct(todayClicks ? (todayConversions / todayClicks) * 100 : 0)}
+                  icon={<Target className="w-4 h-4" />}
+                  color="amber"
+                />
+              </div>
+
+              {/* 30-day Summary */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+                <MiniStat
+                  label="Total Clicks (30d)"
+                  value={totals.clicksTotal}
+                  icon={<Eye className="w-4 h-4" />}
+                  color="blue"
+                />
+                <MiniStat
+                  label="Conversions (30d)"
+                  value={totals.conversionsTotal}
+                  icon={<Target className="w-4 h-4" />}
+                  color="green"
+                />
+                <MiniStat
+                  label="Commission (30d)"
+                  value={fmtINR(totals.commissionTotal)}
+                  icon={<DollarSign className="w-4 h-4" />}
                   color="purple"
                 />
               </div>
@@ -352,7 +487,7 @@ export default function DashboardPage() {
               <div className="mt-8">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-medium text-gray-900">Daily Click Activity</h3>
-                  <button className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1">
+                  <button className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1" onClick={refreshAnalytics}>
                     <RefreshCw className="w-3 h-3" />
                     Refresh
                   </button>
@@ -372,7 +507,7 @@ export default function DashboardPage() {
                     <div className="h-40 flex items-end justify-between gap-1 px-2">
                       {bars.map((b, i) => (
                         <div key={i} className="flex flex-col items-center" style={{ width: 'calc(100% / 30)' }}>
-                          <div 
+                          <div
                             className="w-full bg-gradient-to-t from-blue-500 to-cyan-400 rounded-t-lg transition-all duration-300 hover:opacity-90"
                             style={{ height: `${b.height}%` }}
                             title={`${b.clicks} clicks on ${b.date}`}
@@ -392,7 +527,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Recent Links Card */}
+            {/* Recent Links Card (mobile-optimized) */}
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -402,8 +537,8 @@ export default function DashboardPage() {
                   </h2>
                   <p className="text-gray-600 text-sm mt-1">Your recently generated links</p>
                 </div>
-                <Link 
-                  href="/dashboard/affiliate" 
+                <Link
+                  href="/dashboard/affiliate"
                   className="text-blue-600 hover:text-blue-700 font-medium text-sm flex items-center gap-1"
                 >
                   Manage all
@@ -420,7 +555,7 @@ export default function DashboardPage() {
                   <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-xl">
                     <LinkIcon className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-gray-600 mb-3">No links generated yet</p>
-                    <button 
+                    <button
                       onClick={goGenerate}
                       className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white text-sm font-semibold rounded-lg hover:shadow-lg transition-all"
                     >
@@ -429,38 +564,48 @@ export default function DashboardPage() {
                   </div>
                 ) : (
                   recentLinks.map((link, index) => (
-                    <div key={link.subid || index} className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-all duration-300">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="text-xs font-mono bg-gray-100 px-2 py-1 rounded">
-                              {link.subid?.substring(0, 8)}...
+                    <div
+                      key={link.subid || index}
+                      className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-all duration-300"
+                    >
+                      <div className="flex sm:flex-row flex-col items-start sm:items-center justify-between gap-2 sm:gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <div className="text-[11px] font-mono bg-gray-100 px-2 py-1 rounded max-w-[150px] sm:max-w-none truncate">
+                              {link.subid || '-'}
                             </div>
-                            <div className="text-xs text-gray-500">
-                              {new Date(link.createdAt).toLocaleDateString()}
+                            <div className="text-[11px] text-gray-500">
+                              {link.createdAt ? new Date(link.createdAt).toLocaleDateString() : ''}
                             </div>
                           </div>
-                          <div className="text-sm text-gray-600 truncate">
-                            {link.shareUrl?.substring(0, 60)}...
+                          <div className="text-sm text-gray-600 break-all line-clamp-2 sm:line-clamp-1">
+                            {link.shareUrl || link.shortUrl || '-'}
                           </div>
                         </div>
-                        <button className="p-2 hover:bg-gray-100 rounded-lg">
-                          <MoreVertical className="w-4 h-4 text-gray-500" />
-                        </button>
+
+                        <div className="sm:self-start self-end">
+                          <button className="p-2 hover:bg-gray-100 rounded-lg">
+                            <MoreVertical className="w-4 h-4 text-gray-500" />
+                          </button>
+                        </div>
                       </div>
-                      
+
                       <div className="mt-4 grid grid-cols-3 gap-3">
                         <div className="text-center">
-                          <div className="text-xs text-gray-500">Clicks</div>
-                          <div className="text-sm font-bold text-gray-900">{link.clicks || 0}</div>
+                          <div className="text-[11px] text-gray-500">Clicks</div>
+                          <div className="text-sm font-bold text-gray-900">{Number(link.clicks || 0)}</div>
                         </div>
                         <div className="text-center">
-                          <div className="text-xs text-gray-500">Conversions</div>
-                          <div className="text-sm font-bold text-green-600">{link.approvedConversions || 0}</div>
+                          <div className="text-[11px] text-gray-500">Conversions</div>
+                          <div className="text-sm font-bold text-green-600">
+                            {Number(link.approvedConversions || link.conversions || 0)}
+                          </div>
                         </div>
                         <div className="text-center">
-                          <div className="text-xs text-gray-500">Earnings</div>
-                          <div className="text-sm font-bold text-purple-600">₹{Number(link.approvedCommissionSum || 0).toFixed(0)}</div>
+                          <div className="text-[11px] text-gray-500">Earnings</div>
+                          <div className="text-sm font-bold text-purple-600">
+                            ₹{Number(link.approvedCommissionSum || link.commission || 0).toLocaleString()}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -475,106 +620,82 @@ export default function DashboardPage() {
             {/* Performance Summary Card */}
             <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-200 rounded-2xl p-6">
               <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <TrendingIcon className="w-5 h-5 text-blue-600" />
+                <TrendingUp className="w-5 h-5 text-blue-600" />
                 Performance Summary
               </h3>
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">Today's Clicks</span>
-                  <span className="font-bold text-gray-900">342</span>
+                  <span className="font-bold text-gray-900">{Number(todayClicks).toLocaleString()}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">Today's Conversions</span>
+                  <span className="font-bold text-gray-900">{Number(todayConversions).toLocaleString()}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">Today's Earnings</span>
-                  <span className="font-bold text-gray-900">₹1,250</span>
+                  <span className="font-bold text-gray-900">{fmtINR(todayCommission)}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">Conversion Rate</span>
-                  <span className="font-bold text-green-600">4.2%</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">Active Campaigns</span>
-                  <span className="font-bold text-gray-900">8</span>
+                  <span className="font-bold text-green-600">
+                    {fmtPct(todayClicks ? (todayConversions / todayClicks) * 100 : 0)}
+                  </span>
                 </div>
               </div>
               <div className="mt-6 pt-4 border-t border-blue-200">
-                <Link 
+                <Link
                   href="/dashboard/analytics"
                   className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center justify-center gap-1 group"
                 >
                   View Detailed Analytics
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </Link>
               </div>
             </div>
 
-            {/* Recent Activity */}
+            {/* Featured Offers preview (from backend, FIXED) */}
             <div className="bg-white border border-gray-200 rounded-2xl p-6">
               <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-gray-600" />
-                Recent Activity
+                <StoreIcon className="w-5 h-5 text-gray-600" />
+                Featured Offers
               </h3>
-              <div className="space-y-4">
-                {[
-                  { time: '2 min ago', action: 'Link generated for iPhone 15', amount: '₹850', type: 'success' },
-                  { time: '15 min ago', action: 'Commission earned from Amazon', amount: '₹320', type: 'success' },
-                  { time: '1 hour ago', action: 'New follower clicked your link', amount: '', type: 'info' },
-                  { time: '3 hours ago', action: 'Payout processed to bank', amount: '₹2,500', type: 'success' },
-                  { time: 'Yesterday', action: 'Store added: Myntra', amount: '', type: 'info' },
-                ].map((activity, index) => (
-                  <div key={index} className="flex items-start gap-3 p-3 hover:bg-gray-50 rounded-xl transition-colors">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                      activity.type === 'success' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'
-                    }`}>
-                      {activity.type === 'success' ? 
-                        <CheckCircle className="w-4 h-4" /> : 
-                        <Bell className="w-4 h-4" />
-                      }
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-medium text-gray-900">{activity.action}</div>
-                      <div className="text-xs text-gray-500">{activity.time}</div>
-                    </div>
-                    {activity.amount && (
-                      <div className="text-sm font-bold text-green-600">{activity.amount}</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Top Performing Stores */}
-            <div className="bg-white border border-gray-200 rounded-2xl p-6">
-              <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <Store className="w-5 h-5 text-gray-600" />
-                Top Performing Stores
-              </h3>
-              <div className="space-y-4">
-                {[
-                  { name: 'Amazon', earnings: '₹8,450', growth: '+12%', icon: '🛒' },
-                  { name: 'Flipkart', earnings: '₹5,230', growth: '+8%', icon: '📦' },
-                  { name: 'Myntra', earnings: '₹3,890', growth: '+15%', icon: '👕' },
-                  { name: 'Ajio', earnings: '₹2,150', growth: '+5%', icon: '👗' },
-                ].map((store, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-xl transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-50 to-cyan-50 flex items-center justify-center text-lg">
-                        {store.icon}
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-900">{store.name}</div>
-                        <div className="text-sm text-green-600 flex items-center gap-1">
-                          <TrendingIcon className="w-3 h-3" />
-                          {store.growth}
+              {loadingOffers ? (
+                <div className="space-y-2">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="h-14 bg-gray-100 rounded-lg animate-pulse"></div>
+                  ))}
+                </div>
+              ) : !Array.isArray(offers) || offers.length === 0 ? (
+                <div className="text-center py-6">
+                  <Gift className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <div className="text-gray-600">No offers available</div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {offers.slice(0, 4).map((offer, idx) => (
+                    <div key={offer._id || idx} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-xl transition-colors">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-900 truncate">
+                          {offer.title || offer.categoryKey || 'Offer'}
+                        </div>
+                        <div className="text-xs text-gray-500 truncate">
+                          {offer.store?.name || 'Store'}
                         </div>
                       </div>
+                      <div className="px-2 py-1 bg-green-50 text-green-700 rounded-md text-xs font-semibold">
+                        {typeof offer.commissionRate === 'number' ? `${Math.round(offer.commissionRate)}%` : 'Var'}
+                      </div>
+                      <Link
+                        href="/dashboard/affiliate"
+                        className="px-3 py-1.5 text-xs bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold rounded-lg hover:shadow-md transition-all"
+                      >
+                        Create Link
+                      </Link>
                     </div>
-                    <div className="text-right">
-                      <div className="font-bold text-gray-900">{store.earnings}</div>
-                      <div className="text-xs text-gray-500">Earnings</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -591,8 +712,8 @@ export default function DashboardPage() {
               </h2>
               <p className="text-gray-600 text-sm mt-1">High commission offers for you</p>
             </div>
-            <Link 
-              href="/offers" 
+            <Link
+              href="/offers"
               className="text-blue-600 hover:text-blue-700 font-medium text-sm flex items-center gap-1"
             >
               View all offers
@@ -620,28 +741,26 @@ export default function DashboardPage() {
                       <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-50 to-orange-50 flex items-center justify-center">
                         <Gift className="w-4 h-4 text-amber-600" />
                       </div>
-                      <div>
-                        <div className="text-xs text-gray-500">{offer.store?.name || 'Store'}</div>
-                        <div className="font-bold text-gray-900 line-clamp-1">{offer.title || offer.name}</div>
+                      <div className="min-w-0">
+                        <div className="text-xs text-gray-500 truncate">{offer.store?.name || 'Store'}</div>
+                        <div className="font-bold text-gray-900 line-clamp-1">{offer.title || offer.categoryKey}</div>
                       </div>
                     </div>
+                    <div className="px-2 py-1 bg-green-50 text-green-700 rounded-md text-xs font-bold">
+                      {typeof offer.commissionRate === 'number' ? `${Math.round(offer.commissionRate)}%` : 'Var'}
+                    </div>
                   </div>
-                  
+
                   <p className="text-sm text-gray-600 mb-4 line-clamp-2">
-                    {offer.description || 'Special offer with high conversion rate'}
+                    {offer.description || 'High converting affiliate offer'}
                   </p>
-                  
+
                   <div className="flex items-center justify-between mb-4">
-                    {typeof offer.rate === 'number' ? (
-                      <div className="text-lg font-bold text-green-600">{Number(offer.rate).toFixed(0)}%</div>
-                    ) : (
-                      <div className="text-sm text-gray-500">Variable</div>
-                    )}
                     <div className="text-xs text-gray-500">Commission</div>
                   </div>
-                  
+
                   <div className="flex gap-2">
-                    <button 
+                    <button
                       onClick={() => router.push('/dashboard/affiliate')}
                       className="flex-1 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-500 text-white text-sm font-semibold rounded-lg hover:shadow-lg transition-all flex items-center justify-center gap-2 group"
                     >
@@ -655,22 +774,41 @@ export default function DashboardPage() {
           )}
         </div>
       </section>
+
+      {/* Earnings Breakdown Section (separate section as requested)
+      <section className="container mx-auto px-4 pb-12">
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+          <h3 className="text-lg font-bold text-gray-900 mb-4">Earnings Breakdown</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <BreakdownTile label="Total Earnings" value={fmtINR(earningsBreakdown.totalEarnings)} color="text-blue-700" />
+            <BreakdownTile label="Redeemed Earnings" value={fmtINR(earningsBreakdown.redeemedEarnings)} color="text-green-700" />
+            <BreakdownTile label="Pending Amount" value={fmtINR(earningsBreakdown.pendingAmount)} color="text-amber-700" />
+            <BreakdownTile label="Available For Withdraw" value={fmtINR(earningsBreakdown.availableForWithdraw)} color="text-purple-700" />
+          </div>
+        </div>
+      </section> */}
+
+      <StyleTag />
     </main>
   );
 }
 
-function StatCard({ title, value, icon, color, change }) {
+function BreakdownTile({ label, value, color }) {
+  return (
+    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 hover:bg-white transition-colors">
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className={`text-lg font-bold mt-1 ${color}`}>{value}</div>
+    </div>
+  );
+}
+
+function StatCard({ title, value, icon, color }) {
   return (
     <div className="bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-lg hover:border-blue-300 transition-all duration-300">
       <div className="flex items-center justify-between mb-4">
         <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${color} flex items-center justify-center text-white`}>
           {icon}
         </div>
-        {change && (
-          <div className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">
-            {change}
-          </div>
-        )}
       </div>
       <div className="text-2xl font-bold text-gray-900">₹{Number(value || 0).toLocaleString()}</div>
       <div className="text-sm text-gray-500 mt-1">{title}</div>
@@ -678,7 +816,7 @@ function StatCard({ title, value, icon, color, change }) {
   );
 }
 
-function MiniStat({ label, value, icon, change, color }) {
+function MiniStat({ label, value, icon, color }) {
   const colorClasses = {
     blue: 'bg-blue-50 text-blue-600',
     green: 'bg-green-50 text-green-600',
@@ -692,11 +830,10 @@ function MiniStat({ label, value, icon, change, color }) {
         <div className={`w-8 h-8 rounded-lg ${colorClasses[color]} flex items-center justify-center`}>
           {icon}
         </div>
-        {change && (
-          <div className="text-xs font-bold text-green-600">{change}</div>
-        )}
       </div>
-      <div className="text-lg font-bold text-gray-900">{typeof value === 'number' ? value.toLocaleString() : value}</div>
+      <div className="text-lg font-bold text-gray-900">
+        {typeof value === 'number' ? value.toLocaleString() : value}
+      </div>
       <div className="text-xs text-gray-500 mt-1">{label}</div>
     </div>
   );
@@ -710,18 +847,18 @@ const styles = `
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 1;
   }
-  
+
   .line-clamp-2 {
     overflow: hidden;
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
   }
-  
+
   .animate-pulse {
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
-  
+
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }

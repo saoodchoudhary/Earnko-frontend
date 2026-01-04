@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import {
   Users, Link as LinkIcon, Gift, DollarSign,
-  Copy, CheckCircle, Clock, TrendingUp,
-  UserPlus, Award, Share2, ChevronRight
+  Copy, CheckCircle, TrendingUp,
+  UserPlus, Award, Share2, Mail
 } from 'lucide-react';
 
 export default function ReferralsPage() {
@@ -16,22 +16,33 @@ export default function ReferralsPage() {
   const [totals, setTotals] = useState({ totalRewards: 0, totalAmount: 0 });
   const [copied, setCopied] = useState(false);
 
+  const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      try { return await res.json(); } catch { return null; }
+    }
+    const txt = await res.text().catch(() => '');
+    return { success: false, message: txt };
+  };
+
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
       try {
         setLoading(true);
         const token = localStorage.getItem('token');
-        const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+        if (!token) { toast.error('Please login'); return; }
         const res = await fetch(`${base}/api/user/referrals`, {
           signal: controller.signal,
-          headers: { Authorization: token ? `Bearer ${token}` : '' }
+          headers: { Authorization: `Bearer ${token}` }
         });
-        const js = await res.json();
+        const js = await safeJson(res);
         if (!res.ok) throw new Error(js?.message || 'Failed to load referrals');
         setLink(js?.data?.referralLink || '');
-        setReferred(js?.data?.referred || []);
-        setRewards(js?.data?.rewards || []);
+        setReferred(Array.isArray(js?.data?.referred) ? js.data.referred : []);
+        setRewards(Array.isArray(js?.data?.rewards) ? js.data.rewards : []);
         setTotals(js?.data?.totals || { totalRewards: 0, totalAmount: 0 });
       } catch (err) {
         if (err.name !== 'AbortError') toast.error(err.message || 'Error loading');
@@ -39,23 +50,24 @@ export default function ReferralsPage() {
         setLoading(false);
       }
     }
-    load();
+    if (base) load();
     return () => controller.abort();
-  }, []);
+  }, [base]);
 
   const copyLink = async () => {
     try {
+      if (!link) return toast.error('Link unavailable');
       await navigator.clipboard.writeText(link);
       setCopied(true);
       toast.success('Referral link copied!');
       setTimeout(() => setCopied(false), 2000);
-    } catch { 
-      toast.error('Copy failed'); 
+    } catch {
+      toast.error('Copy failed');
     }
   };
 
   const shareLink = async () => {
-    if (navigator.share) {
+    if (navigator.share && link) {
       try {
         await navigator.share({
           title: 'Join Earnko & Start Earning',
@@ -63,13 +75,13 @@ export default function ReferralsPage() {
           url: link,
         });
         toast.success('Shared successfully!');
-      } catch (error) {
-        console.log('Sharing cancelled:', error);
-      }
+      } catch (_) {}
     } else {
       copyLink();
     }
   };
+
+  const fmtINR = (n) => `₹${Number(n || 0).toLocaleString()}`;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
@@ -97,22 +109,22 @@ export default function ReferralsPage() {
           <div className="lg:col-span-2 space-y-6">
             {/* Stats Overview */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <StatCard 
-                title="Total Rewards" 
+              <StatCard
+                title="Total Rewards"
                 value={totals.totalRewards}
                 icon={<Award className="w-5 h-5" />}
                 color="from-blue-500 to-blue-600"
                 description="Successful referrals"
               />
-              <StatCard 
-                title="Total Earnings" 
-                value={`₹${Number(totals.totalAmount || 0).toLocaleString()}`}
+              <StatCard
+                title="Total Earnings"
+                value={fmtINR(totals.totalAmount || 0)}
                 icon={<DollarSign className="w-5 h-5" />}
                 color="from-green-500 to-emerald-600"
                 description="From referrals"
               />
-              <StatCard 
-                title="Referred Users" 
+              <StatCard
+                title="Referred Users"
                 value={referred.length}
                 icon={<UserPlus className="w-5 h-5" />}
                 color="from-purple-500 to-pink-600"
@@ -132,32 +144,35 @@ export default function ReferralsPage() {
                 </div>
               </div>
 
-              <div className="relative">
-                <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg">
-                  <LinkIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                  <div className="text-sm text-gray-900 truncate flex-1">
-                    {link || 'Loading...'}
+              <div className="space-y-3">
+                {/* Link row: stack on mobile for responsiveness */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg">
+                  <div className="flex items-start sm:items-center gap-2 sm:flex-1 min-w-0">
+                    <LinkIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                    <div className="text-sm text-gray-900 break-all sm:truncate sm:break-normal min-w-0">
+                      {link || 'Loading...'}
+                    </div>
                   </div>
-                  <button
-                    onClick={copyLink}
-                    className="px-3 py-1.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1"
-                  >
-                    {copied ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    {copied ? 'Copied!' : 'Copy'}
-                  </button>
+                  <div className="flex items-center gap-2 sm:ml-auto flex-wrap">
+                    <button
+                      onClick={shareLink}
+                      className="px-3 py-1.5 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1 w-full sm:w-auto"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      Share
+                    </button>
+                    <button
+                      onClick={copyLink}
+                      className="px-3 py-1.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1 w-full sm:w-auto"
+                    >
+                      {copied ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      {copied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
                 </div>
-                
-                <div className="mt-3 flex items-center gap-2">
-                  <button
-                    onClick={shareLink}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                  >
-                    <Share2 className="w-4 h-4" />
-                    Share
-                  </button>
-                  <div className="text-xs text-gray-500">
-                    Earn 10% of your friend's lifetime earnings
-                  </div>
+
+                <div className="text-xs text-gray-500">
+                  Earn 10% of your friend's lifetime earnings
                 </div>
               </div>
             </div>
@@ -202,9 +217,19 @@ export default function ReferralsPage() {
                             {user.name?.charAt(0)?.toUpperCase() || user.email?.charAt(0)?.toUpperCase() || 'U'}
                           </div>
                         </div>
-                        <div className="flex-1">
-                          <div className="font-medium text-gray-900">{user.name || 'Anonymous'}</div>
-                          <div className="text-sm text-gray-500">{user.email || 'No email'}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-gray-900 truncate">{user.name || 'Anonymous'}</div>
+                          <div className="text-sm text-gray-600 flex items-center gap-1">
+                            <Mail className="w-3 h-3 text-gray-500 flex-shrink-0" />
+                            <a
+                              href={user.email ? `mailto:${user.email}` : '#'}
+                              className="break-all sm:break-normal sm:truncate"
+                              title={user.email || 'No email'}
+                              onClick={(e) => { if (!user.email) e.preventDefault(); }}
+                            >
+                              {user.email || 'No email'}
+                            </a>
+                          </div>
                         </div>
                         <div className="text-right">
                           <div className="text-sm text-gray-500">
@@ -250,13 +275,18 @@ export default function ReferralsPage() {
                   {rewards.map(reward => (
                     <div key={reward._id} className="p-4 hover:bg-gray-50 transition-colors">
                       <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <div className="font-medium text-gray-900">
+                        <div className="min-w-0">
+                          <div className="font-medium text-gray-900 truncate">
                             {reward.referred?.name || 'Anonymous User'}
                           </div>
-                          <div className="text-sm text-gray-500">{reward.referred?.email || ''}</div>
+                          <div className="text-sm text-gray-600 flex items-center gap-1">
+                            <Mail className="w-3 h-3 text-gray-500 flex-shrink-0" />
+                            <span className="break-all sm:break-normal sm:truncate" title={reward.referred?.email || ''}>
+                              {reward.referred?.email || ''}
+                            </span>
+                          </div>
                         </div>
-                        <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        <div className={`px-2 py-1 rounded-full text-xs font-medium shrink-0 ${
                           reward.status === 'completed' ? 'bg-green-100 text-green-600' :
                           reward.status === 'pending' ? 'bg-amber-100 text-amber-600' :
                           'bg-gray-100 text-gray-600'
@@ -264,16 +294,16 @@ export default function ReferralsPage() {
                           {reward.status || 'Unknown'}
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center justify-between text-sm">
-                        <div className="text-gray-600">
+                        <div className="text-gray-600 truncate">
                           Order: {reward.transaction?.orderId || 'N/A'}
                         </div>
-                        <div className="font-bold text-green-600">
-                          ₹{Number(reward.amount || 0).toLocaleString()}
+                        <div className="font-bold text-green-600 shrink-0">
+                          {fmtINR(reward.amount || reward.transaction?.commissionAmount || 0)}
                         </div>
                       </div>
-                      
+
                       <div className="text-xs text-gray-500 mt-2">
                         {reward.createdAt ? new Date(reward.createdAt).toLocaleDateString() : '-'}
                       </div>
@@ -289,44 +319,30 @@ export default function ReferralsPage() {
                 <TrendingUp className="w-5 h-5 text-blue-600" />
                 How It Works
               </h3>
-              
+
               <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <div className="text-xs font-bold text-blue-600">1</div>
+                {[
+                  { step: 1, title: 'Share Your Link', desc: 'Share your unique referral link' },
+                  { step: 2, title: 'Friends Join', desc: 'Friends sign up using your link' },
+                  { step: 3, title: 'Earn Rewards', desc: "Earn 10% of your friend's lifetime earnings" }
+                ].map(s => (
+                  <div key={s.step} className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                      <div className="text-xs font-bold text-blue-600">{s.step}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">{s.title}</div>
+                      <div className="text-xs text-gray-600">{s.desc}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">Share Your Link</div>
-                    <div className="text-xs text-gray-600">Share your unique referral link</div>
-                  </div>
-                </div>
-                
-                <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <div className="text-xs font-bold text-blue-600">2</div>
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">Friends Join</div>
-                    <div className="text-xs text-gray-600">Friends sign up using your link</div>
-                  </div>
-                </div>
-                
-                <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <div className="text-xs font-bold text-blue-600">3</div>
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">Earn Rewards</div>
-                    <div className="text-xs text-gray-600">Earn 10% of their lifetime earnings</div>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 
             {/* Quick Stats */}
             <div className="bg-white border border-gray-200 rounded-xl p-6">
               <h3 className="font-bold text-gray-900 mb-4">Quick Stats</h3>
-              
+
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Active Referrals</span>
@@ -349,16 +365,16 @@ export default function ReferralsPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Avg. Reward</span>
                   <span className="text-sm font-bold text-purple-600">
-                    ₹{rewards.length > 0 ? 
-                      Math.round(rewards.reduce((a, b) => a + (b.amount || 0), 0) / rewards.length) : 
-                      0}
+                    {fmtINR(rewards.length > 0 ?
+                      Math.round(rewards.reduce((a, b) => a + Number(b.amount || 0), 0) / rewards.length) :
+                      0)}
                   </span>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </div> {/* container */}
     </div>
   );
 }

@@ -1,40 +1,40 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useSelector, useDispatch } from 'react-redux'
 import { logout } from '@/store/slices/authSlice'
 import {
   Grid, Link as LinkIcon, ShoppingBag, Wallet, Users,
-  CreditCard, Settings as SettingsIcon, LogOut, Menu, X, User,
+  CreditCard, Settings as SettingsIcon, LogOut, Menu, X, User as UserIcon,
   TrendingUp, BarChart3, Bell, Search, Zap, Home,
   ChevronRight, Award, DollarSign, ExternalLink,
   PieChart, TrendingUp as TrendingIcon, Gift, Shield,
   HelpCircle, MessageSquare, FileText, Calendar,
   ChevronDown, Globe, Shield as ShieldIcon,
-  Target, Clock, Star
+  Target, Clock, Star, ArrowLeft, RefreshCw
 } from 'lucide-react'
 
 // Organize navigation items by categories
 const navCategories = [
   {
-    title: "DASHBOARD",
+    title: 'DASHBOARD',
     items: [
       { key: 'dashboard', label: 'Dashboard', href: '/dashboard', icon: Grid, color: 'text-blue-600', badge: null },
     ]
   },
   {
-    title: "EARNINGS",
+    title: 'EARNINGS',
     items: [
       { key: 'affiliate', label: 'Create Link', href: '/dashboard/affiliate', icon: Zap, color: 'text-cyan-600', badge: 'New' },
       { key: 'stores', label: 'Stores', href: '/stores', icon: CreditCard, color: 'text-indigo-600', badge: null },
-      { key: 'offers', label: 'Top Offers', href: '/dashboard/#', icon: Gift, color: 'text-amber-600', badge: 'Hot' },
+      // { key: 'offers', label: 'Top Offers', href: '/dashboard/#', icon: Gift, color: 'text-amber-600', badge: 'Hot' },
       { key: 'refer', label: 'Refer & Earn', href: '/dashboard/referrals', icon: Users, color: 'text-pink-600', badge: null },
     ]
   },
   {
-    title: "MANAGE",
+    title: 'MANAGE',
     items: [
       { key: 'transactions', label: 'Transactions', href: '/dashboard/transactions', icon: ShoppingBag, color: 'text-orange-600', badge: null },
       { key: 'withdraw', label: 'Withdraw', href: '/dashboard/withdraw', icon: Wallet, color: 'text-green-600', badge: null },
@@ -42,7 +42,7 @@ const navCategories = [
     ]
   },
   {
-    title: "ACCOUNT",
+    title: 'ACCOUNT',
     items: [
       { key: 'settings', label: 'Settings', href: '/dashboard/settings', icon: SettingsIcon, color: 'text-gray-600', badge: null },
       { key: 'support', label: 'Support', href: '/dashboard/support', icon: HelpCircle, color: 'text-red-600', badge: null },
@@ -60,9 +60,10 @@ export default function DashboardLayout({ children }) {
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
-  const [notifications, setNotifications] = useState(0)
-  
-  // State for data from backend
+
+  const [loading, setLoading] = useState(true)
+
+  // Backend data
   const [userData, setUserData] = useState(null)
   const [walletData, setWalletData] = useState(null)
   const [quickStats, setQuickStats] = useState({
@@ -71,7 +72,29 @@ export default function DashboardLayout({ children }) {
     activeCampaigns: 0,
     conversionRate: 0
   })
-  const [loading, setLoading] = useState(true)
+
+  // Real-time today analytics (clicks + conversions)
+  const [analyticsToday, setAnalyticsToday] = useState({ clicks: 0, conversions: 0 })
+
+  // Notifications
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [notifLoading, setNotifLoading] = useState(false)
+  const [notificationsList, setNotificationsList] = useState([])
+  const notifBtnRef = useRef(null)
+  const notifBoxRef = useRef(null)
+
+  const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null)
+
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      try { return await res.json() } catch { return null }
+    }
+    const txt = await res.text().catch(() => '')
+    return { success: false, message: txt }
+  }
 
   useEffect(() => { setIsMounted(true) }, [])
   useEffect(() => { setSidebarOpen(false) }, [pathname])
@@ -81,47 +104,58 @@ export default function DashboardLayout({ children }) {
     const fetchUserData = async () => {
       try {
         setLoading(true)
-        const token = localStorage.getItem('token')
-        if (!token) return
+        const token = getToken()
+        if (!token || !base) return
 
         // Fetch user profile
-        const userRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/auth/me`, {
+        const userRes = await fetch(`${base}/api/auth/me`, {
           headers: { Authorization: `Bearer ${token}` }
         })
-        const userDataRes = await userRes.json()
+        const userDataRes = await safeJson(userRes)
         const userProfile = userDataRes?.data?.user || userDataRes?.data || null
-        setUserData(userProfile)
+        setUserData(userProfile || null)
 
         // Fetch wallet data
-        const walletRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/wallet/me`, {
+        const walletRes = await fetch(`${base}/api/wallet/me`, {
           headers: { Authorization: `Bearer ${token}` }
         })
-        const walletDataRes = await walletRes.json()
+        const walletDataRes = await safeJson(walletRes)
         setWalletData(walletDataRes?.data?.wallet || null)
 
-        // Fetch quick stats
-        const statsRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/user/quick-stats`, {
+        // Fetch quick stats (if available)
+        const statsRes = await fetch(`${base}/api/user/quick-stats`, {
           headers: { Authorization: `Bearer ${token}` }
         })
         if (statsRes.ok) {
-          const statsData = await statsRes.json()
-          setQuickStats(statsData.data || {
-            todayEarnings: 1250,
-            todayClicks: 342,
-            activeCampaigns: 8,
-            conversionRate: 4.2
-          })
+          const statsData = await safeJson(statsRes)
+          if (statsData?.data) {
+            setQuickStats(statsData.data)
+          }
+        }
+
+        // Fetch today's clicks + conversions (real) from analytics daily series
+        const analyticsRes = await fetch(`${base}/api/user/analytics?range=1d`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (analyticsRes.ok) {
+          const analyticsData = await safeJson(analyticsRes)
+          const daily = Array.isArray(analyticsData?.data?.daily) ? analyticsData.data.daily : []
+          const today = daily.reduce(
+            (acc, d) => ({
+              clicks: acc.clicks + Number(d.clicks || 0),
+              conversions: acc.conversions + Number(d.conversions || 0),
+            }),
+            { clicks: 0, conversions: 0 }
+          )
+          setAnalyticsToday(today)
         }
 
         // Fetch notifications count
-        const notifRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/user/notifications/unread-count`, {
+        const notifCountRes = await fetch(`${base}/api/user/notifications/unread-count`, {
           headers: { Authorization: `Bearer ${token}` }
         })
-        if (notifRes.ok) {
-          const notifData = await notifRes.json()
-          setNotifications(notifData.data?.count || 0)
-        }
-
+        const notifCountData = await safeJson(notifCountRes)
+        setUnreadCount(Number(notifCountData?.data?.count || 0))
       } catch (error) {
         console.error('Error fetching user data:', error)
       } finally {
@@ -130,31 +164,86 @@ export default function DashboardLayout({ children }) {
     }
 
     fetchUserData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Load notifications list when dropdown opens
+  const loadNotifications = async () => {
+    try {
+      setNotifLoading(true)
+      const token = getToken()
+      if (!base || !token) {
+        setNotificationsList([])
+        setNotifLoading(false)
+        return
+      }
+      const res = await fetch(`${base}/api/notifications?limit=20`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const data = await safeJson(res)
+      if (!res.ok) {
+        setNotificationsList([])
+        setNotifLoading(false)
+        return
+      }
+      const list = data?.data?.notifications || data?.data?.items || data?.notifications || data?.items || []
+      setNotificationsList(Array.isArray(list) ? list : [])
+    } catch {
+      setNotificationsList([])
+    } finally {
+      setNotifLoading(false)
+    }
+  }
+
+  // Toggle notif dropdown
+  const toggleNotif = () => {
+    setNotifOpen(prev => {
+      const next = !prev
+      if (next) loadNotifications()
+      return next
+    })
+  }
+
+  // Close notif on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (!notifOpen) return
+      const btn = notifBtnRef.current
+      const box = notifBoxRef.current
+      if (btn && btn.contains(e.target)) return
+      if (box && box.contains(e.target)) return
+      setNotifOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [notifOpen])
 
   // Determine which user data to display
   const displayUser = user || userData
 
-  const initials = (() => {
+  const initials = useMemo(() => {
     const name = displayUser?.name || ''
     if (!name) return 'U'
     return name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
-  })()
+  }, [displayUser?.name])
 
   const formatINR = (n) => {
     const num = Number(n || 0)
     try {
       return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(num)
     } catch {
-      return `₹ ${Math.round(num)}`
+      return `₹${Math.round(num)}`
     }
   }
 
-  // Get wallet data from multiple sources
+  // Wallet-derived values
   const availableBalance = walletData?.availableBalance ?? displayUser?.wallet?.availableBalance ?? 0
   const pendingCashback = walletData?.pendingCashback ?? displayUser?.wallet?.pendingCashback ?? 0
   const confirmedCashback = walletData?.confirmedCashback ?? displayUser?.wallet?.confirmedCashback ?? 0
   const referralEarnings = walletData?.referralEarnings ?? displayUser?.wallet?.referralEarnings ?? 0
+
+  // Total earnings to show next to mobile notifications (confirmed + referral)
+  const totalEarnings = Number(confirmedCashback || 0) + Number(referralEarnings || 0)
 
   const handleLogout = () => {
     try {
@@ -169,9 +258,7 @@ export default function DashboardLayout({ children }) {
 
   const isActiveHref = (href) => {
     if (!isMounted) return false
-    if (href === '/dashboard') {
-      return pathname === '/dashboard'
-    }
+    if (href === '/dashboard') return pathname === '/dashboard'
     if (pathname === href) return true
     const normalized = href.endsWith('/') ? href : href + '/'
     return pathname.startsWith(normalized)
@@ -193,43 +280,113 @@ export default function DashboardLayout({ children }) {
     { icon: <TrendingIcon className="w-4 h-4" />, label: 'Analytics', href: '/dashboard/analytics', color: 'from-purple-500 to-pink-500' },
   ]
 
-  // Header stats items
+  // Header stats with real today's clicks and conversions
   const headerStats = [
-    { label: 'Today', value: `₹${quickStats.todayEarnings}`, change: '+12.5%', icon: <DollarSign className="w-4 h-4" />, color: 'text-green-600' },
-    { label: 'Clicks', value: quickStats.todayClicks, change: '+8.2%', icon: <TrendingIcon className="w-4 h-4" />, color: 'text-blue-600' },
-    { label: 'Conversion', value: `${quickStats.conversionRate}%`, change: '+1.4%', icon: <Target className="w-4 h-4" />, color: 'text-purple-600' },
-    { label: 'Active', value: quickStats.activeCampaigns, change: null, icon: <Zap className="w-4 h-4" />, color: 'text-amber-600' },
+    { label: 'Today', value: `₹${Number(quickStats.todayEarnings || 0).toLocaleString()}`, change: null, icon: <DollarSign className="w-4 h-4" />, color: 'text-green-600' },
+    { label: 'Clicks', value: Number(analyticsToday.clicks || 0).toLocaleString(), change: null, icon: <TrendingIcon className="w-4 h-4" />, color: 'text-blue-600' },
+    { label: 'Conversions', value: Number(analyticsToday.conversions || 0).toLocaleString(), change: null, icon: <Target className="w-4 h-4" />, color: 'text-purple-600' },
+    { label: 'Active', value: Number(quickStats.activeCampaigns || 0).toLocaleString(), change: null, icon: <Zap className="w-4 h-4" />, color: 'text-amber-600' },
   ]
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Mobile Header - Compact Design */}
+      {/* Mobile Header - with back button and earnings next to notifications */}
       <header className="lg:hidden bg-white border-b shadow-sm sticky top-0 z-40">
         <div className="px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <button 
-                onClick={() => setSidebarOpen(true)} 
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <Menu className="w-5 h-5 text-gray-700" />
-              </button>
+              {pathname !== '/dashboard' ? (
+                <button 
+                  onClick={() => router.back()} 
+                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  aria-label="Back"
+                >
+                  <ArrowLeft className="w-5 h-5 text-gray-700" />
+                </button>
+              ) : (
+                <button 
+                  onClick={() => setSidebarOpen(true)} 
+                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  aria-label="Menu"
+                >
+                  <Menu className="w-5 h-5 text-gray-700" />
+                </button>
+              )}
               <Link href="/" className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center">
+
+              <img 
+               src='/images/earnko-logo-round.png'
+               alt='earnko logo'
+               className='w-[40px]'
+               />
+                {/* <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center">
                   <TrendingUp className="w-4 h-4 text-white" />
-                </div>
+                </div> */}
                 <span className="text-lg font-bold text-gray-900">Earnko</span>
               </Link>
             </div>
-            <div className="flex items-center space-x-2">
-              <button className="relative p-2">
+            <div className="relative flex items-center gap-2">
+              <button
+                ref={notifBtnRef}
+                onClick={toggleNotif}
+                className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                aria-label="Notifications"
+              >
                 <Bell className="w-5 h-5 text-gray-600" />
-                {notifications > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
-                    {notifications}
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
+                    {Math.min(unreadCount, 9)}
                   </span>
                 )}
               </button>
+              {/* Earnings pill to the right of notifications (from backend wallet) */}
+              <div className="px-2 py-1 rounded-lg bg-gray-100 text-gray-900 text-xs font-semibold">
+                {formatINR(totalEarnings)}
+              </div>
+
+              {/* Mobile notif dropdown */}
+              {notifOpen && (
+                <div
+                  ref={notifBoxRef}
+                  className="absolute right-0 top-full mt-2 w-80 max-w-[90vw] bg-white border border-gray-200 rounded-lg shadow-lg z-50"
+                >
+                  <div className="px-3 py-2 border-b flex items-center justify-between">
+                    <div className="text-sm font-semibold text-gray-900">Notifications</div>
+                    <button
+                      onClick={loadNotifications}
+                      className="p-1.5 rounded hover:bg-gray-100"
+                      title="Refresh"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${notifLoading ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {notifLoading ? (
+                      <div className="p-3 space-y-2">
+                        {[...Array(3)].map((_, i) => (
+                          <div key={i} className="h-12 bg-gray-100 rounded animate-pulse" />
+                        ))}
+                      </div>
+                    ) : notificationsList.length === 0 ? (
+                      <div className="p-4 text-center text-sm text-gray-600">No notifications</div>
+                    ) : (
+                      notificationsList.map((n, i) => (
+                        <div key={n._id || i} className="px-3 py-2 border-b last:border-b-0 hover:bg-gray-50">
+                          <div className="text-sm font-medium text-gray-900 truncate">
+                            {n.title || n.subject || 'Notification'}
+                          </div>
+                          <div className="text-xs text-gray-600 truncate">
+                            {n.message || n.body || n.description || ''}
+                          </div>
+                          <div className="text-[11px] text-gray-400 mt-0.5">
+                            {n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -241,9 +398,15 @@ export default function DashboardLayout({ children }) {
           {/* Logo Section - Compact */}
           <div className="px-4 py-5 border-b border-gray-200">
             <Link href="/" className="flex items-center space-x-3 group">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center group-hover:scale-105 transition-transform duration-300">
+
+              <img 
+               src='/images/earnko-logo-round.png'
+               alt='earnko logo'
+               className='w-[40px]'
+               />
+              {/* <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center group-hover:scale-105 transition-transform duration-300">
                 <TrendingUp className="w-5 h-5 text-white" />
-              </div>
+              </div> */}
               <div>
                 <div className="text-lg font-bold text-gray-900">Earnko</div>
                 <div className="text-xs text-gray-500">Dashboard</div>
@@ -344,15 +507,21 @@ export default function DashboardLayout({ children }) {
         <div className="h-full flex flex-col bg-white shadow-xl">
           <div className="px-4 py-5 border-b flex items-center justify-between">
             <Link href="/" className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center">
+
+              <img 
+               src='/images/earnko-logo-round.png'
+               alt='earnko logo'
+               className='w-[40px]'
+               />
+              {/* <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center">
                 <TrendingUp className="w-5 h-5 text-white" />
-              </div>
+              </div> */}
               <div>
                 <div className="text-lg font-bold text-gray-900">Earnko</div>
                 <div className="text-xs text-gray-500">Dashboard</div>
               </div>
             </Link>
-            <button onClick={() => setSidebarOpen(false)} className="p-2 rounded-lg hover:bg-gray-100">
+            <button onClick={() => setSidebarOpen(false)} className="p-2 rounded-lg hover:bg-gray-100" aria-label="Close menu">
               <X className="w-5 h-5 text-gray-600" />
             </button>
           </div>
@@ -416,25 +585,25 @@ export default function DashboardLayout({ children }) {
         />
       )}
 
-      {/* Main Content Area */}
+      {/* Main Content Area with extra bottom padding so bottom nav doesn't overlap content */}
       <div className="lg:pl-64">
         {/* Desktop Header - Clean and Functional */}
-        <header className="hidden lg:block bg-white border-b border-gray-200">
+        <header className="hidden lg:block bg-white border-b border-gray-200 sticky top-0 z-30">
           <div className="px-6 py-3">
             <div className="flex items-center justify-between">
               {/* Left: Breadcrumb and Search */}
-              <div className="flex items-center gap-6 flex-1">
+              <div className="flex items-center gap-6 flex-1 min-w-0">
                 {/* Breadcrumb */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                   <span className="text-sm font-medium text-gray-900">Dashboard</span>
                   <ChevronRight className="w-4 h-4 text-gray-400" />
-                  <span className="text-sm text-gray-600">
+                  <span className="text-sm text-gray-600 truncate max-w-[50vw]">
                     {pathname.split('/').pop()?.charAt(0).toUpperCase() + pathname.split('/').pop()?.slice(1) || 'Overview'}
                   </span>
                 </div>
 
                 {/* Search */}
-                <div className="flex-1 max-w-md">
+                {/* <div className="flex-1 max-w-md">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
@@ -443,7 +612,7 @@ export default function DashboardLayout({ children }) {
                       className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
                     />
                   </div>
-                </div>
+                </div> */}
               </div>
 
               {/* Right: Stats and Actions */}
@@ -454,33 +623,71 @@ export default function DashboardLayout({ children }) {
                     <div key={index} className="text-center">
                       <div className="text-xs text-gray-500">{stat.label}</div>
                       <div className="text-sm font-bold text-gray-900">{stat.value}</div>
-                      {stat.change && (
-                        <div className="text-[10px] font-semibold text-green-600">{stat.change}</div>
-                      )}
                     </div>
                   ))}
                 </div>
 
-                <div className="w-px h-6 bg-gray-200"></div>
+                <div className="w-px h-6 bg-gray-200" />
 
-                {/* Actions */}
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={() => router.push('/dashboard/affiliate')}
-                    className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white text-sm font-semibold rounded-lg hover:shadow-lg transition-all flex items-center gap-2"
+                {/* Actions (Create Link removed as requested) */}
+                <div className="relative flex items-center gap-2">
+                  <button
+                    ref={notifBtnRef}
+                    onClick={toggleNotif}
+                    className="relative p-2 rounded-lg hover:bg-gray-100"
+                    aria-label="Notifications"
                   >
-                    <Zap className="w-4 h-4" />
-                    Create Link
-                  </button>
-                  
-                  <button className="relative p-2 rounded-lg hover:bg-gray-100">
                     <Bell className="w-5 h-5 text-gray-600" />
-                    {notifications > 0 && (
-                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
-                        {notifications}
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
+                        {Math.min(unreadCount, 99)}
                       </span>
                     )}
                   </button>
+
+                  {/* Desktop notif dropdown opens below the bell */}
+                  {notifOpen && (
+                    <div
+                      ref={notifBoxRef}
+                      className="absolute right-0 top-full mt-2 w-96 bg-white border border-gray-200 rounded-lg shadow-lg z-50"
+                    >
+                      <div className="px-4 py-2 border-b flex items-center justify-between">
+                        <div className="text-sm font-semibold text-gray-900">Notifications</div>
+                        <button
+                          onClick={loadNotifications}
+                          className="p-1.5 rounded hover:bg-gray-100"
+                          title="Refresh"
+                        >
+                          <RefreshCw className={`w-4 h-4 ${notifLoading ? 'animate-spin' : ''}`} />
+                        </button>
+                      </div>
+                      <div className="max-h-80 overflow-y-auto">
+                        {notifLoading ? (
+                          <div className="p-4 space-y-2">
+                            {[...Array(4)].map((_, i) => (
+                              <div key={i} className="h-12 bg-gray-100 rounded animate-pulse" />
+                            ))}
+                          </div>
+                        ) : notificationsList.length === 0 ? (
+                          <div className="p-4 text-center text-sm text-gray-600">No notifications</div>
+                        ) : (
+                          notificationsList.map((n, i) => (
+                            <div key={n._id || i} className="px-4 py-3 border-b last:border-b-0 hover:bg-gray-50">
+                              <div className="text-sm font-medium text-gray-900 truncate">
+                                {n.title || n.subject || 'Notification'}
+                              </div>
+                              <div className="text-xs text-gray-600 truncate">
+                                {n.message || n.body || n.description || ''}
+                              </div>
+                              <div className="text-[11px] text-gray-400 mt-0.5">
+                                {n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <Link 
                     href="/dashboard/settings" 
@@ -494,9 +701,9 @@ export default function DashboardLayout({ children }) {
           </div>
         </header>
 
-        {/* Main Content - Maximum Space */}
-        <main className="min-h-screen">
-          <div className="px-4 lg:px-6 py-4">
+        {/* Main Content - add bottom padding to prevent overlap with bottom nav on mobile */}
+        <main className="min-h-screen pb-24 lg:pb-0" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          <div className="px-4 mb-[60px] lg:mb-0 lg:px-6 py-4">
             {children}
           </div>
         </main>
@@ -508,7 +715,6 @@ export default function DashboardLayout({ children }) {
               <Grid className="w-5 h-5 text-gray-600" />
               <span className="text-xs mt-1">Home</span>
             </Link>
-          
             <Link href="/dashboard/analytics" className="flex flex-col items-center p-2">
               <BarChart3 className="w-5 h-5 text-gray-600" />
               <span className="text-xs mt-1">Analytics</span>
@@ -517,13 +723,10 @@ export default function DashboardLayout({ children }) {
               <Zap className="w-5 h-5 text-gray-600" />
               <span className="text-xs mt-1">Create</span>
             </Link>
-            
-            
             <Link href="/dashboard/withdraw" className="flex flex-col items-center p-2">
               <Wallet className="w-5 h-5 text-gray-600" />
               <span className="text-xs mt-1">Wallet</span>
             </Link>
-            
             <Link href="/dashboard/settings" className="flex flex-col items-center p-2">
               <SettingsIcon className="w-5 h-5 text-gray-600" />
               <span className="text-xs mt-1">More</span>
@@ -532,41 +735,21 @@ export default function DashboardLayout({ children }) {
         </div>
       </div>
 
-      {/* Add custom styles */}
+      {/* Custom styles */}
       <style jsx global>{`
         /* Custom scrollbar for sidebar */
         aside nav {
           scrollbar-width: thin;
           scrollbar-color: #cbd5e1 #f1f5f9;
         }
-        
-        aside nav::-webkit-scrollbar {
-          width: 4px;
-        }
-        
-        aside nav::-webkit-scrollbar-track {
-          background: #f1f5f9;
-        }
-        
-        aside nav::-webkit-scrollbar-thumb {
-          background-color: #cbd5e1;
-          border-radius: 2px;
-        }
-        
+        aside nav::-webkit-scrollbar { width: 4px; }
+        aside nav::-webkit-scrollbar-track { background: #f1f5f9; }
+        aside nav::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 2px; }
         /* Smooth transitions */
-        * {
-          transition: background-color 0.2s ease, border-color 0.2s ease;
-        }
-        
-        /* Animation for pulse */
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-        
-        .animate-pulse {
-          animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
+        * { transition: background-color 0.2s ease, border-color 0.2s ease; }
+        /* Pulse animation */
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
       `}</style>
     </div>
   )

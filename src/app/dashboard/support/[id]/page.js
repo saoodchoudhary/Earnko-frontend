@@ -1,49 +1,70 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { 
-  ChevronLeft, Send, XCircle, MessageSquare, 
+import {
+  ChevronLeft, Send, XCircle, MessageSquare,
   User, Shield, Clock, CheckCircle, AlertCircle,
-  RefreshCw, Paperclip, MoreVertical, Download,
-  Copy, ExternalLink, ArrowUpRight
+  RefreshCw, Paperclip, Download, Copy, ExternalLink, ArrowUpRight
 } from 'lucide-react';
 import { getSocket, reconnectSocket } from '@/lib/socket';
 
-export default function SupportTicketDetail({ params }) {
-  const { id } = React.use(params);
+export default function SupportTicketDetail() {
+  const router = useRouter();
+  const params = useParams();
+  const id = String(params?.id || '');
+
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [closing, setClosing] = useState(false);
   const [reply, setReply] = useState('');
-  const [attachments, setAttachments] = useState([]);
+
   const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
-  const mountedRef = useRef(false);
   const messagesEndRef = useRef(null);
+
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      try { return await res.json(); } catch { return null; }
+    }
+    const txt = await res.text().catch(() => '');
+    return { success: false, message: txt };
+  };
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   const load = async (signal) => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
+      if (!token) {
+        if (typeof window !== 'undefined') router.push('/login?next=/dashboard/support');
+        return;
+      }
       const res = await fetch(`${base}/api/support/tickets/${id}`, {
         signal,
-        headers: { Authorization: token ? `Bearer ${token}` : '' }
+        headers: { Authorization: `Bearer ${token}` }
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok) throw new Error(data?.message || 'Failed to load ticket');
       setTicket(data?.data?.ticket || null);
-      setAttachments(data?.data?.attachments || []);
     } catch (err) {
-      if (err.name !== 'AbortError') toast.error(err.message || 'Failed to load ticket');
+      if (err?.name !== 'AbortError') {
+        toast.error(err.message || 'Failed to load ticket');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  // Load and wire socket listeners
   useEffect(() => {
-    mountedRef.current = true;
+    if (!id || !base) return;
     const controller = new AbortController();
     load(controller.signal);
 
@@ -51,20 +72,26 @@ export default function SupportTicketDetail({ params }) {
     if (!sock.connected) reconnectSocket();
 
     const onConnect = () => {
-      sock.emit('support:join', { ticketId: id });
+      try { sock.emit('support:join', { ticketId: id }); } catch {}
     };
     const onMessage = (payload) => {
-      if (payload?.ticketId !== id) return;
+      // payload: { ticketId, reply }
+      if (!payload?.ticketId || String(payload.ticketId) !== id) return;
       setTicket((prev) => {
         if (!prev) return prev;
-        const replies = Array.isArray(prev.replies) ? prev.replies.slice() : [];
-        replies.push(payload.reply);
+        const replies = Array.isArray(prev.replies) ? [...prev.replies] : [];
+        // Avoid duplicates by simple matching on message+timestamp if present
+        const exists = replies.some(
+          (r) => r.message === payload.reply?.message && r.createdAt === payload.reply?.createdAt
+        );
+        if (!exists && payload.reply) replies.push(payload.reply);
         return { ...prev, replies, updatedAt: payload.reply?.createdAt || prev.updatedAt };
       });
       scrollToBottom();
     };
     const onStatus = (payload) => {
-      if (payload?.ticketId !== id) return;
+      // payload: { ticketId, status, updatedAt }
+      if (!payload?.ticketId || String(payload.ticketId) !== id) return;
       setTicket((prev) => prev ? ({ ...prev, status: payload.status, updatedAt: payload.updatedAt || prev.updatedAt }) : prev);
       toast.success(`Ticket ${payload.status}`);
     };
@@ -82,55 +109,62 @@ export default function SupportTicketDetail({ params }) {
       sock.off('support:message', onMessage);
       sock.off('support:status', onStatus);
       sock.off('support:error', onError);
-      mountedRef.current = false;
       controller.abort();
     };
-  }, [id]);
+  }, [id, base]);
 
   useEffect(() => {
     scrollToBottom();
   }, [ticket?.replies]);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
 
   const sendReply = async () => {
     if (!reply.trim()) {
       toast.error('Please enter a message');
       return;
     }
-    
-    const sock = getSocket();
-    if (!sock.connected) reconnectSocket();
-    setSending(true);
-    
-    sock.emit('support:message', { ticketId: id, message: reply }, (ack) => {
-      setSending(false);
-      if (!ack?.ok) {
-        toast.error(ack?.error || 'Failed to send message');
-        return;
-      }
+    try {
+      setSending(true);
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${base}/api/support/tickets/${id}/reply`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : ''
+        },
+        body: JSON.stringify({ message: reply.trim() })
+      });
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(data?.message || 'Failed to send reply');
+      // Backend returns updated ticket; prefer that to avoid duplicates
+      setTicket(data?.data?.ticket || ticket);
       setReply('');
       toast.success('Message sent');
-    });
+      scrollToBottom();
+    } catch (err) {
+      toast.error(err?.message || 'Failed to send message');
+    } finally {
+      setSending(false);
+    }
   };
 
   const closeTicket = async () => {
     if (!confirm('Are you sure you want to close this ticket?')) return;
-    
-    const sock = getSocket();
-    if (!sock.connected) reconnectSocket();
-    setClosing(true);
-    
-    sock.emit('support:status', { ticketId: id, status: 'closed' }, (ack) => {
-      setClosing(false);
-      if (!ack?.ok) {
-        toast.error(ack?.error || 'Failed to close ticket');
-        return;
-      }
+    try {
+      setClosing(true);
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${base}/api/support/tickets/${id}/close`, {
+        method: 'PATCH',
+        headers: { Authorization: token ? `Bearer ${token}` : '' }
+      });
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(data?.message || 'Failed to close ticket');
+      setTicket(data?.data?.ticket || { ...(ticket || {}), status: 'closed' });
       toast.success('Ticket closed successfully');
-    });
+    } catch (err) {
+      toast.error(err?.message || 'Failed to close ticket');
+    } finally {
+      setClosing(false);
+    }
   };
 
   const refreshTicket = () => {
@@ -140,21 +174,19 @@ export default function SupportTicketDetail({ params }) {
   };
 
   const getStatusIcon = (status) => {
-    switch (status) {
-      case 'open': return <AlertCircle className="w-4 h-4" />;
-      case 'closed': return <CheckCircle className="w-4 h-4" />;
-      case 'pending': return <Clock className="w-4 h-4" />;
-      default: return <Clock className="w-4 h-4" />;
-    }
+    const s = String(status || '').toLowerCase();
+    if (s === 'closed') return <CheckCircle className="w-4 h-4" />;
+    if (s === 'pending' || s === 'under_review') return <Clock className="w-4 h-4" />;
+    if (s === 'open') return <AlertCircle className="w-4 h-4" />;
+    return <Clock className="w-4 h-4" />;
   };
 
   const getStatusColor = (status) => {
-    switch (status) {
-      case 'open': return 'bg-blue-100 text-blue-600';
-      case 'closed': return 'bg-green-100 text-green-600';
-      case 'pending': return 'bg-amber-100 text-amber-600';
-      default: return 'bg-gray-100 text-gray-600';
-    }
+    const s = String(status || '').toLowerCase();
+    if (s === 'closed') return 'bg-green-100 text-green-600';
+    if (s === 'pending' || s === 'under_review') return 'bg-amber-100 text-amber-600';
+    if (s === 'open') return 'bg-blue-100 text-blue-600';
+    return 'bg-gray-100 text-gray-600';
   };
 
   const formatDate = (dateString) => {
@@ -169,8 +201,37 @@ export default function SupportTicketDetail({ params }) {
   };
 
   const copyTicketId = () => {
-    navigator.clipboard.writeText(id);
-    toast.success('Ticket ID copied to clipboard');
+    if (!id) return;
+    navigator.clipboard.writeText(id)
+      .then(() => toast.success('Ticket ID copied to clipboard'))
+      .catch(() => toast.error('Copy failed'));
+  };
+
+  const exportChat = () => {
+    if (!ticket) return;
+    const payload = {
+      id: ticket._id,
+      subject: ticket.subject,
+      status: ticket.status,
+      createdAt: ticket.createdAt,
+      updatedAt: ticket.updatedAt,
+      message: ticket.message,
+      replies: ticket.replies || []
+    };
+    const dataStr = JSON.stringify(payload, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+    const filename = `ticket-${String(ticket._id || id).slice(0, 8)}-${new Date().toISOString().split('T')[0]}.json`;
+    const a = document.createElement('a');
+    a.href = dataUri;
+    a.download = filename;
+    a.click();
+  };
+
+  const onTextareaKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!sending && reply.trim()) sendReply();
+    }
   };
 
   return (
@@ -180,15 +241,15 @@ export default function SupportTicketDetail({ params }) {
         <div className="container mx-auto px-4 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Link 
-                href="/dashboard/support" 
+              <Link
+                href="/dashboard/support"
                 className="p-2 rounded-lg hover:bg-white/20 transition-colors"
               >
                 <ChevronLeft className="w-5 h-5" />
               </Link>
               <div>
                 <h1 className="text-xl font-bold">Support Ticket</h1>
-                <p className="text-blue-100 text-sm">Ticket ID: {id.substring(0, 8)}...</p>
+                <p className="text-blue-100 text-sm">Ticket ID: {String(id).substring(0, 8)}...</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -222,43 +283,53 @@ export default function SupportTicketDetail({ params }) {
                 <MessageSquare className="w-5 h-5 text-blue-600" />
                 Ticket Information
               </h3>
-              
-              <div className="space-y-4">
-                <div>
-                  <div className="text-xs text-gray-500">Status</div>
-                  <div className={`mt-1 px-3 py-1.5 rounded-full text-sm font-medium inline-flex items-center gap-1 ${getStatusColor(ticket?.status)}`}>
-                    {getStatusIcon(ticket?.status)}
-                    {ticket?.status?.charAt(0).toUpperCase() + ticket?.status?.slice(1)}
+
+              {loading ? (
+                <div className="space-y-3">
+                  <div className="h-5 bg-gray-200 rounded w-2/3 animate-pulse" />
+                  <div className="h-5 bg-gray-200 rounded w-1/2 animate-pulse" />
+                  <div className="h-5 bg-gray-200 rounded w-3/4 animate-pulse" />
+                </div>
+              ) : !ticket ? (
+                <div className="text-sm text-gray-600">Ticket not found</div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-xs text-gray-500">Status</div>
+                    <div className={`mt-1 px-3 py-1.5 rounded-full text-sm font-medium inline-flex items-center gap-1 ${getStatusColor(ticket?.status)}`}>
+                      {getStatusIcon(ticket?.status)}
+                      {String(ticket?.status || 'open')[0].toUpperCase() + String(ticket?.status || 'open').slice(1)}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-gray-500">Category</div>
+                    <div className="mt-1 text-sm font-medium text-gray-900">
+                      {ticket?.category || 'General'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-gray-500">Created</div>
+                    <div className="mt-1 text-sm text-gray-900">
+                      {ticket?.createdAt ? formatDate(ticket.createdAt) : 'N/A'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-gray-500">Last Updated</div>
+                    <div className="mt-1 text-sm text-gray-900">
+                      {ticket?.updatedAt ? formatDate(ticket.updatedAt) : 'N/A'}
+                    </div>
                   </div>
                 </div>
-                
-                <div>
-                  <div className="text-xs text-gray-500">Category</div>
-                  <div className="mt-1 text-sm font-medium text-gray-900">
-                    {ticket?.category || 'General'}
-                  </div>
-                </div>
-                
-                <div>
-                  <div className="text-xs text-gray-500">Created</div>
-                  <div className="mt-1 text-sm text-gray-900">
-                    {ticket?.createdAt ? formatDate(ticket.createdAt) : 'N/A'}
-                  </div>
-                </div>
-                
-                <div>
-                  <div className="text-xs text-gray-500">Last Updated</div>
-                  <div className="mt-1 text-sm text-gray-900">
-                    {ticket?.updatedAt ? formatDate(ticket.updatedAt) : 'N/A'}
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Actions Card */}
             <div className="bg-white border border-gray-200 rounded-xl p-6">
               <h3 className="font-bold text-gray-900 mb-4">Actions</h3>
-              
+
               <div className="space-y-3">
                 {ticket?.status !== 'closed' && (
                   <button
@@ -279,12 +350,15 @@ export default function SupportTicketDetail({ params }) {
                     )}
                   </button>
                 )}
-                
-                <button className="w-full py-2.5 px-4 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+
+                <button
+                  onClick={exportChat}
+                  className="w-full py-2.5 px-4 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                >
                   <Download className="w-4 h-4" />
                   Export Chat
                 </button>
-                
+
                 <Link
                   href="/dashboard/support"
                   className="w-full py-2.5 px-4 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
@@ -295,24 +369,28 @@ export default function SupportTicketDetail({ params }) {
               </div>
             </div>
 
-            {/* Attachments */}
-            {attachments.length > 0 && (
+            {/* Attachments (if backend includes them on ticket) */}
+            {Array.isArray(ticket?.attachments) && ticket.attachments.length > 0 && (
               <div className="bg-white border border-gray-200 rounded-xl p-6">
                 <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
                   <Paperclip className="w-5 h-5 text-blue-600" />
-                  Attachments ({attachments.length})
+                  Attachments ({ticket.attachments.length})
                 </h3>
-                
+
                 <div className="space-y-2">
-                  {attachments.slice(0, 3).map((attachment, index) => (
-                    <div key={index} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg">
+                  {ticket.attachments.slice(0, 5).map((attachment, index) => (
+                    <a
+                      key={index}
+                      href={attachment.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg"
+                    >
                       <div className="text-sm text-gray-700 truncate">
-                        {attachment.name}
+                        {attachment.name || attachment.url}
                       </div>
-                      <button className="text-blue-600 hover:text-blue-700">
-                        <Download className="w-4 h-4" />
-                      </button>
-                    </div>
+                      <ExternalLink className="w-4 h-4 text-blue-600" />
+                    </a>
                   ))}
                 </div>
               </div>
@@ -328,7 +406,7 @@ export default function SupportTicketDetail({ params }) {
                   <div>
                     <h2 className="text-xl font-bold text-gray-900">{ticket?.subject || 'Loading...'}</h2>
                     <div className="text-sm text-gray-600 mt-1">
-                      Ticket #{id.substring(0, 8)}
+                      Ticket #{String(id).substring(0, 8)}
                     </div>
                   </div>
                   <div className="text-sm text-gray-500">
@@ -345,28 +423,30 @@ export default function SupportTicketDetail({ params }) {
                     <div className="h-16 bg-gray-200 rounded-xl animate-pulse ml-8"></div>
                     <div className="h-16 bg-gray-200 rounded-xl animate-pulse"></div>
                   </div>
+                ) : !ticket ? (
+                  <div className="text-center text-sm text-gray-600">Ticket not found</div>
                 ) : (
                   <div className="space-y-6">
                     {/* Initial Message */}
-                    <MessageBubble 
-                      by="user" 
-                      name="You" 
-                      message={ticket?.message || ''} 
-                      date={ticket?.createdAt} 
+                    <MessageBubble
+                      by="user"
+                      name="You"
+                      message={ticket?.message || ''}
+                      date={ticket?.createdAt}
                       isInitial={true}
                     />
 
                     {/* Replies */}
-                    {(ticket?.replies || []).map((reply, idx) => (
-                      <MessageBubble 
-                        key={idx} 
-                        by={reply.by} 
-                        name={reply.by === 'admin' ? 'Support Team' : 'You'} 
-                        message={reply.message} 
-                        date={reply.createdAt} 
+                    {(ticket?.replies || []).map((r, idx) => (
+                      <MessageBubble
+                        key={`${r.createdAt || idx}-${idx}`}
+                        by={r.by}
+                        name={r.by === 'admin' ? 'Support Team' : 'You'}
+                        message={r.message}
+                        date={r.createdAt}
                       />
                     ))}
-                    
+
                     <div ref={messagesEndRef} />
                   </div>
                 )}
@@ -385,6 +465,7 @@ export default function SupportTicketDetail({ params }) {
                         placeholder="Type your response here..."
                         value={reply}
                         onChange={(e) => setReply(e.target.value)}
+                        onKeyDown={onTextareaKeyDown}
                         rows={3}
                       />
                     </div>
@@ -414,7 +495,7 @@ export default function SupportTicketDetail({ params }) {
                   </div>
                 </div>
               )}
-              
+
               {ticket?.status === 'closed' && (
                 <div className="p-6 border-t border-gray-200 bg-gradient-to-r from-green-50 to-emerald-50">
                   <div className="text-center py-4">
@@ -436,8 +517,6 @@ export default function SupportTicketDetail({ params }) {
 
 function MessageBubble({ by, name, message, date, isInitial = false }) {
   const isAdmin = by === 'admin';
-  const isUser = by === 'user';
-  
   return (
     <div className={`flex ${isAdmin ? 'justify-start' : 'justify-end'}`}>
       <div className={`max-w-[80%] rounded-2xl p-4 ${isAdmin ? 'bg-gradient-to-r from-blue-50 to-cyan-50' : 'bg-gradient-to-r from-gray-50 to-gray-100'} border ${isAdmin ? 'border-blue-100' : 'border-gray-200'}`}>
@@ -461,11 +540,11 @@ function MessageBubble({ by, name, message, date, isInitial = false }) {
             </div>
           </div>
         </div>
-        
+
         <div className="whitespace-pre-wrap text-gray-800">
           {message}
         </div>
-        
+
         {isInitial && (
           <div className="mt-3 pt-3 border-t border-gray-200 border-dashed">
             <div className="text-xs text-gray-500">Initial request</div>

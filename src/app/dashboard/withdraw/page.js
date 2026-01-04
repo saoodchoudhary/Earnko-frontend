@@ -15,26 +15,37 @@ export default function WithdrawPage() {
   const [submitting, setSubmitting] = useState(false);
 
   // Saved payout info from Settings
-  const [savedPayout, setSavedPayout] = useState({ 
-    upiId: '', 
-    bank: { 
-      holderName: '', 
-      accountNumber: '', 
-      ifsc: '', 
-      bankName: '' 
-    } 
+  const [savedPayout, setSavedPayout] = useState({
+    upiId: '',
+    bank: {
+      holderName: '',
+      accountNumber: '',
+      ifsc: '',
+      bankName: ''
+    }
   });
 
   // Form state
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState('bank');
-  const [bank, setBank] = useState({ 
-    holderName: '', 
-    accountNumber: '', 
-    ifsc: '', 
-    bankName: '' 
+  const [bank, setBank] = useState({
+    holderName: '',
+    accountNumber: '',
+    ifsc: '',
+    bankName: ''
   });
   const [upiId, setUpiId] = useState('');
+
+  const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      try { return await res.json(); } catch { return null; }
+    }
+    const txt = await res.text().catch(() => '');
+    return { success: false, message: txt };
+  };
 
   // Load wallet summary and saved payout info
   useEffect(() => {
@@ -43,36 +54,47 @@ export default function WithdrawPage() {
       try {
         setLoading(true);
         const token = localStorage.getItem('token');
-        const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+        if (!token) {
+          if (typeof window !== 'undefined') window.location.href = '/login?next=/dashboard/withdraw';
+          return;
+        }
+        if (!base) {
+          toast.error('Backend URL not configured');
+          return;
+        }
 
         const [wRes, pRes] = await Promise.all([
-          fetch(`${base}/api/wallet/me`, { 
-            signal: controller.signal, 
-            headers: { Authorization: token ? `Bearer ${token}` : '' } 
+          fetch(`${base}/api/wallet/me`, {
+            signal: controller.signal,
+            headers: { Authorization: token ? `Bearer ${token}` : '' }
           }),
-          fetch(`${base}/api/user/profile`, { 
-            signal: controller.signal, 
-            headers: { Authorization: token ? `Bearer ${token}` : '' } 
+          fetch(`${base}/api/user/profile`, {
+            signal: controller.signal,
+            headers: { Authorization: token ? `Bearer ${token}` : '' }
           }),
         ]);
 
-        const wData = await wRes.json();
-        const pData = await pRes.json();
+        const wData = await safeJson(wRes);
+        const pData = await safeJson(pRes);
 
         if (wRes.ok) {
           setWallet(wData?.data?.wallet || null);
           setRequestedAmount(wData?.data?.requestedAmount || 0);
+        } else {
+          toast.error(wData?.message || 'Failed to load wallet');
+          setWallet(null);
+          setRequestedAmount(0);
         }
 
         if (pRes.ok) {
-          const payout = pData?.data?.profile?.payout || { 
-            upiId: '', 
-            bank: { 
-              holderName: '', 
-              accountNumber: '', 
-              ifsc: '', 
-              bankName: '' 
-            } 
+          const payout = pData?.data?.profile?.payout || {
+            upiId: '',
+            bank: {
+              holderName: '',
+              accountNumber: '',
+              ifsc: '',
+              bankName: ''
+            }
           };
           setSavedPayout({
             upiId: payout?.upiId || '',
@@ -97,16 +119,21 @@ export default function WithdrawPage() {
               bankName: payout?.bank?.bankName || '',
             });
           }
+        } else {
+          toast.error(pData?.message || 'Failed to load payout profile');
         }
       } catch (error) {
-        console.error('Error loading data:', error);
+        if (error?.name !== 'AbortError') {
+          console.error('Error loading data:', error);
+          toast.error('Error loading withdrawal data');
+        }
       } finally {
         setLoading(false);
       }
     }
     load();
     return () => controller.abort();
-  }, []);
+  }, [base]);
 
   // Keep method-specific fields in sync when user switches method
   useEffect(() => {
@@ -133,19 +160,19 @@ export default function WithdrawPage() {
   }, [amount, method, upiId, bank]);
 
   const availableBalance = wallet?.availableBalance || 0;
-  const minimumWithdrawal = 10;
+  const minimumWithdrawal = 10; // UI min; backend enforces env MIN_PAYOUT_AMOUNT too
   const maximumWithdrawal = 50000;
 
   const submitWithdrawal = async (e) => {
     e.preventDefault();
-    
+
     if (!canSubmit) {
       toast.error('Please fill all required fields');
       return;
     }
 
     const withdrawalAmount = Number(amount);
-    
+
     if (withdrawalAmount < minimumWithdrawal) {
       toast.error(`Minimum withdrawal amount is ₹${minimumWithdrawal}`);
       return;
@@ -168,17 +195,16 @@ export default function WithdrawPage() {
         ? { amount: withdrawalAmount, method, bank }
         : { amount: withdrawalAmount, method, upiId };
 
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
       const res = await fetch(`${base}/api/wallet/withdraw`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          Authorization: token ? `Bearer ${token}` : '' 
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : ''
         },
         body: JSON.stringify(payload),
       });
-      
-      const data = await res.json();
+
+      const data = await safeJson(res);
       if (!res.ok) throw new Error(data?.message || 'Failed to request withdrawal');
 
       toast.success('Withdrawal request submitted successfully!');
@@ -188,7 +214,7 @@ export default function WithdrawPage() {
       const r2 = await fetch(`${base}/api/wallet/me`, {
         headers: { Authorization: token ? `Bearer ${token}` : '' },
       });
-      const d2 = await r2.json();
+      const d2 = await safeJson(r2);
       if (r2.ok) {
         setWallet(d2?.data?.wallet || null);
         setRequestedAmount(d2?.data?.requestedAmount || 0);
@@ -200,28 +226,27 @@ export default function WithdrawPage() {
     }
   };
 
-  const refreshData = () => {
-    const controller = new AbortController();
-    async function refresh() {
-      try {
-        const token = localStorage.getItem('token');
-        const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
-        const res = await fetch(`${base}/api/wallet/me`, {
-          headers: { Authorization: token ? `Bearer ${token}` : '' }
-        });
-        const data = await res.json();
-        if (res.ok) {
-          setWallet(data?.data?.wallet || null);
-          setRequestedAmount(data?.data?.requestedAmount || 0);
-          toast.success('Wallet data refreshed');
-        }
-      } catch (error) {
-        console.error('Error refreshing:', error);
+  const refreshData = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${base}/api/wallet/me`, {
+        headers: { Authorization: token ? `Bearer ${token}` : '' }
+      });
+      const data = await safeJson(res);
+      if (res.ok) {
+        setWallet(data?.data?.wallet || null);
+        setRequestedAmount(data?.data?.requestedAmount || 0);
+        toast.success('Wallet data refreshed');
+      } else {
+        toast.error(data?.message || 'Failed to refresh wallet');
       }
+    } catch (error) {
+      console.error('Error refreshing:', error);
+      toast.error('Error refreshing wallet');
     }
-    refresh();
-    return () => controller.abort();
   };
+
+  const fmtINR = (n) => `₹${Number(n || 0).toLocaleString()}`;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
@@ -256,33 +281,33 @@ export default function WithdrawPage() {
           <div className="lg:col-span-2 space-y-6">
             {/* Wallet Stats */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <StatCard 
-                title="Available Balance" 
+              <StatCard
+                title="Available Balance"
                 value={availableBalance}
                 icon={<Wallet className="w-5 h-5" />}
                 color="from-blue-500 to-blue-600"
                 isPrimary={true}
               />
-              <StatCard 
-                title="Confirmed Cashback" 
+              <StatCard
+                title="Confirmed Cashback"
                 value={wallet?.confirmedCashback || 0}
                 icon={<CheckCircle className="w-5 h-5" />}
                 color="from-green-500 to-emerald-600"
               />
-              <StatCard 
-                title="Pending Cashback" 
+              <StatCard
+                title="Pending Cashback"
                 value={wallet?.pendingCashback || 0}
                 icon={<Clock className="w-5 h-5" />}
                 color="from-amber-500 to-orange-600"
               />
-              <StatCard 
-                title="Requested Amount" 
+              <StatCard
+                title="Requested Amount"
                 value={requestedAmount || 0}
                 icon={<Lock className="w-5 h-5" />}
                 color="from-purple-500 to-pink-600"
               />
-              <StatCard 
-                title="Total Withdrawn" 
+              <StatCard
+                title="Total Withdrawn"
                 value={wallet?.totalWithdrawn || 0}
                 icon={<IndianRupee className="w-5 h-5" />}
                 color="from-indigo-500 to-purple-600"
@@ -314,7 +339,7 @@ export default function WithdrawPage() {
                     <input
                       className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       type="number"
-                      step="0.01"
+                      step="1"
                       min={minimumWithdrawal}
                       max={availableBalance}
                       value={amount}
@@ -325,11 +350,11 @@ export default function WithdrawPage() {
                   </div>
                   <div className="flex items-center justify-between mt-2">
                     <div className="text-xs text-gray-500">
-                      Available: ₹{availableBalance.toLocaleString()}
+                      Available: {fmtINR(availableBalance)}
                     </div>
                     <button
                       type="button"
-                      onClick={() => setAmount(Math.min(availableBalance, maximumWithdrawal))}
+                      onClick={() => setAmount(String(Math.min(availableBalance, maximumWithdrawal)))}
                       className="text-xs text-blue-600 hover:text-blue-700"
                     >
                       Withdraw Max
@@ -347,8 +372,8 @@ export default function WithdrawPage() {
                       type="button"
                       onClick={() => setMethod('bank')}
                       className={`p-4 border rounded-lg text-center transition-all ${
-                        method === 'bank' 
-                          ? 'border-blue-500 bg-blue-50 text-blue-600' 
+                        method === 'bank'
+                          ? 'border-blue-500 bg-blue-50 text-blue-600'
                           : 'border-gray-300 hover:border-gray-400'
                       }`}
                     >
@@ -359,8 +384,8 @@ export default function WithdrawPage() {
                       type="button"
                       onClick={() => setMethod('upi')}
                       className={`p-4 border rounded-lg text-center transition-all ${
-                        method === 'upi' 
-                          ? 'border-blue-500 bg-blue-50 text-blue-600' 
+                        method === 'upi'
+                          ? 'border-blue-500 bg-blue-50 text-blue-600'
                           : 'border-gray-300 hover:border-gray-400'
                       }`}
                     >
@@ -450,7 +475,12 @@ export default function WithdrawPage() {
                 {/* Submit Button */}
                 <button
                   type="submit"
-                  disabled={submitting || !canSubmit || Number(amount) < minimumWithdrawal || Number(amount) > availableBalance}
+                  disabled={
+                    submitting ||
+                    !canSubmit ||
+                    Number(amount) < minimumWithdrawal ||
+                    Number(amount) > availableBalance
+                  }
                   className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {submitting ? (
@@ -477,7 +507,7 @@ export default function WithdrawPage() {
                 <Shield className="w-5 h-5 text-blue-600" />
                 Saved Payout Details
               </h3>
-              
+
               {loading ? (
                 <div className="space-y-2">
                   <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
@@ -507,8 +537,8 @@ export default function WithdrawPage() {
                 <div className="text-center py-4">
                   <AlertCircle className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                   <p className="text-sm text-gray-600">No payout details saved</p>
-                  <a 
-                    href="/dashboard/settings" 
+                  <a
+                    href="/dashboard/settings"
                     className="text-xs text-blue-600 hover:text-blue-700 mt-1 inline-block"
                   >
                     Set up in Settings →
@@ -520,7 +550,7 @@ export default function WithdrawPage() {
             {/* Important Information */}
             <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-6">
               <h3 className="font-bold text-gray-900 mb-4">Important Information</h3>
-              
+
               <div className="space-y-3">
                 <div className="flex items-start gap-2">
                   <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
@@ -531,7 +561,7 @@ export default function WithdrawPage() {
                     <div className="text-xs text-gray-600">24-48 hours for processing</div>
                   </div>
                 </div>
-                
+
                 <div className="flex items-start gap-2">
                   <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
                     <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
@@ -541,7 +571,7 @@ export default function WithdrawPage() {
                     <div className="text-xs text-gray-600">₹{minimumWithdrawal} minimum</div>
                   </div>
                 </div>
-                
+
                 <div className="flex items-start gap-2">
                   <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
                     <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
@@ -551,7 +581,7 @@ export default function WithdrawPage() {
                     <div className="text-xs text-gray-600">₹{maximumWithdrawal.toLocaleString()} maximum</div>
                   </div>
                 </div>
-                
+
                 <div className="flex items-start gap-2">
                   <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
                     <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
@@ -567,25 +597,44 @@ export default function WithdrawPage() {
             {/* Quick Actions */}
             <div className="bg-white border border-gray-200 rounded-xl p-6">
               <h3 className="font-bold text-gray-900 mb-4">Quick Actions</h3>
-              
+
               <div className="space-y-3">
-                <a 
-                  href="/dashboard/settings" 
+                <a
+                  href="/dashboard/settings"
                   className="w-full py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
                 >
                   <CreditCard className="w-4 h-4" />
                   Update Payout Details
                 </a>
-                <a 
-                  href="/dashboard/transactions" 
+                <a
+                  href="/dashboard/transactions"
                   className="w-full py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
                 >
                   <History className="w-4 h-4" />
                   View Transaction History
                 </a>
-                <button className="w-full py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Simple export of wallet snapshot
+                    const snapshot = {
+                      at: new Date().toISOString(),
+                      wallet,
+                      requestedAmount
+                    };
+                    const dataStr = JSON.stringify(snapshot, null, 2);
+                    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+                    const exportFileDefaultName = `wallet-${new Date().toISOString().split('T')[0]}.json`;
+                    const linkElement = document.createElement('a');
+                    linkElement.setAttribute('href', dataUri);
+                    linkElement.setAttribute('download', exportFileDefaultName);
+                    linkElement.click();
+                    toast.success('Statement downloaded');
+                  }}
+                  className="w-full py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                >
                   <Download className="w-4 h-4" />
-                  Download Statements
+                  Download Wallet Snapshot
                 </button>
               </div>
             </div>

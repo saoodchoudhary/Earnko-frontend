@@ -1,13 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'react-hot-toast'
 import {
   User, Mail, Calendar, Clock, Shield, CreditCard,
   TrendingUp, DollarSign, Activity, AlertCircle, CheckCircle,
-  XCircle, RefreshCw, ArrowLeft, MoreVertical, Edit,
-  Save, Lock, Unlock, UserCheck, UserX
+  XCircle, RefreshCw, ArrowLeft, MoreVertical, Save, Ban
 } from 'lucide-react'
 
 export default function AdminUserDetailPage() {
@@ -20,50 +19,100 @@ export default function AdminUserDetailPage() {
   const [saving, setSaving] = useState(false)
   const [role, setRole] = useState('user')
   const [status, setStatus] = useState('active')
-  const [approved, setApproved] = useState(true)
+
+  const actionLoading = useRef(null)
+  const envWarned = useRef(false)
+
+  const getBase = () => process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getHeaders = () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    return { Authorization: token ? `Bearer ${token}` : '' }
+  }
+  const ensureEnvConfigured = () => {
+    const base = getBase()
+    if (!base && !envWarned.current) {
+      envWarned.current = true
+      toast.error('Backend URL not configured. Set NEXT_PUBLIC_BACKEND_URL')
+    }
+  }
+  const handleHttpError = async (res) => {
+    let message = 'Request failed'
+    try {
+      const js = await res.clone().json()
+      if (js?.message) message = js.message
+    } catch {}
+    if (res.status === 401) message = 'Unauthorized. Please login again.'
+    if (res.status === 403) message = 'Forbidden. Admin access required.'
+    throw new Error(message)
+  }
 
   useEffect(() => {
     if (!id) return
     const controller = new AbortController()
     async function load() {
       try {
+        ensureEnvConfigured()
         setLoading(true)
-        const token = localStorage.getItem('token')
-        const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+        const base = getBase()
         const res = await fetch(`${base}/api/admin/users/${id}`, {
           signal: controller.signal,
-          headers: { Authorization: token ? `Bearer ${token}` : '' }
+          headers: getHeaders()
         })
+        if (!res.ok) await handleHttpError(res)
         const js = await res.json()
-        if (!res.ok) throw new Error(js?.message || 'Failed to load user')
         setData(js.data)
         setRole(js.data.user.role)
         setStatus(js.data.user.accountStatus || 'active')
-        setApproved(!!js.data.user.isApproved)
       } catch (err) {
-        if (err.name !== 'AbortError') toast.error(err.message || 'Error loading')
+        if (err.name !== 'AbortError') toast.error(err.message || 'Error loading user')
       } finally {
         setLoading(false)
       }
     }
     load()
     return () => controller.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
+
+  const refreshData = async () => {
+    try {
+      ensureEnvConfigured()
+      setLoading(true)
+      const base = getBase()
+      const res = await fetch(`${base}/api/admin/users/${id}`, {
+        headers: getHeaders()
+      })
+      if (!res.ok) await handleHttpError(res)
+      const js = await res.json()
+      setData(js.data)
+      setRole(js.data.user.role)
+      setStatus(js.data.user.accountStatus || 'active')
+      toast.success('User data refreshed')
+    } catch (err) {
+      toast.error(err.message || 'Error refreshing')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const updateRole = async () => {
     try {
+      ensureEnvConfigured()
       setSaving(true)
-      const token = localStorage.getItem('token')
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      const base = getBase()
       const res = await fetch(`${base}/api/admin/users/${id}/role`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
+        headers: { 'Content-Type': 'application/json', ...getHeaders() },
         body: JSON.stringify({ role })
       })
+      if (!res.ok) await handleHttpError(res)
       const js = await res.json()
-      if (!res.ok) throw new Error(js?.message || 'Failed to update role')
-      toast.success('User role updated successfully')
-      setData(prev => prev ? ({ ...prev, user: js.data.user }) : prev)
+      const updatedUser = js?.data?.user
+      if (!updatedUser) throw new Error('No user returned from backend')
+      if (updatedUser.role !== role) throw new Error('Role update did not persist')
+
+      setData(prev => prev ? ({ ...prev, user: updatedUser }) : prev)
+      toast.success('User role updated')
     } catch (err) {
       toast.error(err.message || 'Failed to update role')
     } finally {
@@ -73,18 +122,22 @@ export default function AdminUserDetailPage() {
 
   const updateStatus = async () => {
     try {
+      ensureEnvConfigured()
       setSaving(true)
-      const token = localStorage.getItem('token')
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      const base = getBase()
       const res = await fetch(`${base}/api/admin/users/${id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
-        body: JSON.stringify({ accountStatus: status, isApproved: approved })
+        headers: { 'Content-Type': 'application/json', ...getHeaders() },
+        body: JSON.stringify({ accountStatus: status }) // approval removed from UI
       })
+      if (!res.ok) await handleHttpError(res)
       const js = await res.json()
-      if (!res.ok) throw new Error(js?.message || 'Failed to update status')
-      toast.success('User status updated successfully')
-      setData(prev => prev ? ({ ...prev, user: js.data.user }) : prev)
+      const updatedUser = js?.data?.user
+      if (!updatedUser) throw new Error('No user returned from backend')
+      if (updatedUser.accountStatus !== status) throw new Error('Status update did not persist')
+
+      setData(prev => prev ? ({ ...prev, user: updatedUser }) : prev)
+      toast.success('User status updated')
     } catch (err) {
       toast.error(err.message || 'Failed to update status')
     } finally {
@@ -92,47 +145,55 @@ export default function AdminUserDetailPage() {
     }
   }
 
-  const quickAction = async (action) => {
+  // Quick actions that have backend support: Hold (PATCH status) and Block (POST /block)
+  const quickHold = async () => {
     try {
-      setSaving(true)
-      const token = localStorage.getItem('token')
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
-      const res = await fetch(`${base}/api/admin/users/${id}/${action}`, {
-        method: 'POST',
-        headers: { Authorization: token ? `Bearer ${token}` : '' },
+      ensureEnvConfigured()
+      actionLoading.current = 'hold'
+      const base = getBase()
+      const res = await fetch(`${base}/api/admin/users/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getHeaders() },
+        body: JSON.stringify({ accountStatus: 'hold' })
       })
+      if (!res.ok) await handleHttpError(res)
       const js = await res.json()
-      if (!res.ok) throw new Error(js?.message || 'Failed to update')
-      toast.success(`User ${action}d successfully`)
-      setData(prev => prev ? ({ ...prev, user: js.data.user }) : prev)
-      setStatus(js.data.user.accountStatus)
-      setApproved(js.data.user.isApproved)
+      const updatedUser = js?.data?.user
+      if (!updatedUser || updatedUser.accountStatus !== 'hold') {
+        throw new Error('Hold action did not persist')
+      }
+      setData(prev => prev ? ({ ...prev, user: updatedUser }) : prev)
+      setStatus('hold')
+      toast.success('User put on hold')
     } catch (err) {
-      toast.error(err.message || 'Failed to update')
+      toast.error(err.message || 'Failed to hold user')
     } finally {
-      setSaving(false)
+      actionLoading.current = null
     }
   }
 
-  const refreshData = async () => {
+  const quickBlock = async () => {
     try {
-      setLoading(true)
-      const token = localStorage.getItem('token')
-      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
-      const res = await fetch(`${base}/api/admin/users/${id}`, {
-        headers: { Authorization: token ? `Bearer ${token}` : '' }
+      ensureEnvConfigured()
+      actionLoading.current = 'block'
+      const base = getBase()
+      const res = await fetch(`${base}/api/admin/users/${id}/block`, {
+        method: 'POST',
+        headers: getHeaders()
       })
+      if (!res.ok) await handleHttpError(res)
       const js = await res.json()
-      if (!res.ok) throw new Error(js?.message || 'Failed to load user')
-      setData(js.data)
-      setRole(js.data.user.role)
-      setStatus(js.data.user.accountStatus || 'active')
-      setApproved(!!js.data.user.isApproved)
-      toast.success('User data refreshed')
+      const updatedUser = js?.data?.user
+      if (!updatedUser || updatedUser.accountStatus !== 'blocked') {
+        throw new Error('Block action did not persist')
+      }
+      setData(prev => prev ? ({ ...prev, user: updatedUser }) : prev)
+      setStatus('blocked')
+      toast.success('User blocked')
     } catch (err) {
-      toast.error(err.message || 'Error refreshing')
+      toast.error(err.message || 'Failed to block user')
     } finally {
-      setLoading(false)
+      actionLoading.current = null
     }
   }
 
@@ -151,7 +212,7 @@ export default function AdminUserDetailPage() {
       </div>
     )
   }
-  
+
   if (!data?.user) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -159,7 +220,7 @@ export default function AdminUserDetailPage() {
           <XCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-gray-900 mb-2">User Not Found</h2>
           <p className="text-gray-600 mb-4">The requested user could not be found.</p>
-          <button 
+          <button
             onClick={() => router.push('/admin/users')}
             className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition-colors"
           >
@@ -239,26 +300,26 @@ export default function AdminUserDetailPage() {
 
               {/* Wallet Stats */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <StatCard 
-                  title="Available Balance" 
+                <StatCard
+                  title="Available Balance"
                   value={u.wallet?.availableBalance || 0}
                   icon={<DollarSign className="w-5 h-5" />}
                   color="from-blue-600 to-blue-800"
                 />
-                <StatCard 
-                  title="Confirmed Cashback" 
+                <StatCard
+                  title="Confirmed Cashback"
                   value={u.wallet?.confirmedCashback || 0}
                   icon={<CheckCircle className="w-5 h-5" />}
                   color="from-green-600 to-green-800"
                 />
-                <StatCard 
-                  title="Pending Cashback" 
+                <StatCard
+                  title="Pending Cashback"
                   value={u.wallet?.pendingCashback || 0}
                   icon={<Clock className="w-5 h-5" />}
                   color="from-amber-600 to-amber-800"
                 />
-                <StatCard 
-                  title="Total Withdrawn" 
+                <StatCard
+                  title="Total Withdrawn"
                   value={u.wallet?.totalWithdrawn || 0}
                   icon={<CreditCard className="w-5 h-5" />}
                   color="from-purple-600 to-purple-800"
@@ -267,23 +328,23 @@ export default function AdminUserDetailPage() {
 
               {/* Quick Stats */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <MiniStat 
-                  title="Transactions" 
+                <MiniStat
+                  title="Transactions"
                   value={st.transactions || 0}
                   icon={<Activity className="w-4 h-4" />}
                 />
-                <MiniStat 
-                  title="Commission Total" 
+                <MiniStat
+                  title="Commission Total"
                   value={`₹${Number(st.commissionTotal || 0).toLocaleString()}`}
                   icon={<TrendingUp className="w-4 h-4" />}
                 />
-                <MiniStat 
-                  title="Pending Amount" 
+                <MiniStat
+                  title="Pending Amount"
                   value={`₹${Number(st.pendingAmount || 0).toLocaleString()}`}
                   icon={<AlertCircle className="w-4 h-4" />}
                 />
-                <MiniStat 
-                  title="Payouts" 
+                <MiniStat
+                  title="Payouts"
                   value={st.payouts || 0}
                   icon={<CreditCard className="w-4 h-4" />}
                 />
@@ -335,7 +396,7 @@ export default function AdminUserDetailPage() {
                 </div>
               </div>
 
-              {/* Status Controls */}
+              {/* Status Controls (approval removed) */}
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -352,23 +413,9 @@ export default function AdminUserDetailPage() {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Approval Status
-                  </label>
-                  <select
-                    value={approved ? 'yes' : 'no'}
-                    onChange={(e) => setApproved(e.target.value === 'yes')}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent"
-                  >
-                    <option value="yes">Approved</option>
-                    <option value="no">Not Approved</option>
-                  </select>
-                </div>
-
                 <button
                   onClick={updateStatus}
-                  disabled={saving || (status === (u.accountStatus || 'active') && approved === !!u.isApproved)}
+                  disabled={saving || status === (u.accountStatus || 'active')}
                   className="w-full py-3 bg-gray-800 text-white font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   <Save className="w-4 h-4" />
@@ -377,38 +424,29 @@ export default function AdminUserDetailPage() {
               </div>
             </div>
 
-            {/* Quick Actions */}
+            {/* Quick Actions (approve removed; only hold and block retained) */}
             <div className="bg-white border border-gray-200 rounded-xl p-6">
               <h3 className="text-lg font-bold text-gray-900 mb-4">Quick Actions</h3>
-              
+
               <div className="grid grid-cols-2 gap-3">
                 <button
-                  onClick={() => quickAction('approve')}
-                  disabled={saving || (u.isApproved && u.accountStatus === 'active')}
-                  className="p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg hover:bg-green-100 transition-colors disabled:opacity-50 flex flex-col items-center justify-center"
-                >
-                  <UserCheck className="w-5 h-5 mb-1" />
-                  <span className="text-sm font-medium">Approve</span>
-                </button>
-                
-                <button
-                  onClick={() => quickAction('hold')}
-                  disabled={saving || u.accountStatus === 'hold'}
+                  onClick={quickHold}
+                  disabled={actionLoading.current === 'hold' || u.accountStatus === 'hold'}
                   className="p-3 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50 flex flex-col items-center justify-center"
                 >
                   <Clock className="w-5 h-5 mb-1" />
                   <span className="text-sm font-medium">Hold</span>
                 </button>
-                
+
                 <button
-                  onClick={() => quickAction('block')}
-                  disabled={saving || u.accountStatus === 'blocked'}
+                  onClick={quickBlock}
+                  disabled={actionLoading.current === 'block' || u.accountStatus === 'blocked'}
                   className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50 flex flex-col items-center justify-center"
                 >
-                  <UserX className="w-5 h-5 mb-1" />
+                  <Ban className="w-5 h-5 mb-1" />
                   <span className="text-sm font-medium">Block</span>
                 </button>
-                
+
                 <button
                   onClick={() => router.push(`/admin/users/${id}/transactions`)}
                   className="p-3 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors flex flex-col items-center justify-center"
@@ -422,12 +460,10 @@ export default function AdminUserDetailPage() {
             {/* User Information */}
             <div className="bg-white border border-gray-200 rounded-xl p-6">
               <h3 className="text-lg font-bold text-gray-900 mb-4">User Information</h3>
-              
+
               <div className="space-y-3">
                 <InfoRow label="User ID" value={u._id?.substring(0, 8) + '...'} />
-                <InfoRow label="Email Verified" value={u.emailVerified ? 'Yes' : 'No'} />
                 <InfoRow label="Phone" value={u.phone || 'Not provided'} />
-                <InfoRow label="Last Login" value={u.lastLogin ? new Date(u.lastLogin).toLocaleString() : 'Never'} />
                 <InfoRow label="Account Created" value={u.createdAt ? new Date(u.createdAt).toLocaleString() : '-'} />
                 <InfoRow label="Last Updated" value={u.updatedAt ? new Date(u.updatedAt).toLocaleString() : '-'} />
               </div>
@@ -471,9 +507,9 @@ function StatusPill({ status }) {
     hold: { color: 'bg-amber-100 text-amber-600 border-amber-200', icon: <Clock className="w-3 h-3" /> },
     blocked: { color: 'bg-red-100 text-red-600 border-red-200', icon: <XCircle className="w-3 h-3" /> },
   }
-  
+
   const { color, icon } = config[status] || { color: 'bg-gray-100 text-gray-600 border-gray-200', icon: null }
-  
+
   return (
     <span className={`px-2 py-1 text-xs rounded-full border flex items-center gap-1 ${color}`}>
       {icon}
@@ -488,9 +524,9 @@ function RolePill({ role }) {
     affiliate: { color: 'bg-blue-100 text-blue-600 border-blue-200' },
     user: { color: 'bg-gray-100 text-gray-600 border-gray-200' },
   }
-  
+
   const { color } = config[role] || { color: 'bg-gray-100 text-gray-600 border-gray-200' }
-  
+
   return (
     <span className={`px-2 py-1 text-xs rounded-full border ${color}`}>
       {role?.charAt(0).toUpperCase() + role?.slice(1) || 'User'}
