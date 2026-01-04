@@ -1,7 +1,7 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { Store, Globe, Percent, Clock, Shield, Link as LinkIcon, Save, X } from 'lucide-react'
+import { useState, useRef } from 'react';
+import { Store, Globe, Percent, Clock, Shield, Link as LinkIcon, Save, X, Image as ImageIcon, Trash2 } from 'lucide-react';
 
 const networks = [
   { value: 'manual', label: 'Manual', icon: '👨‍💼' },
@@ -9,7 +9,7 @@ const networks = [
   { value: 'amazon', label: 'Amazon', icon: '🛒' },
   { value: 'flipkart', label: 'Flipkart', icon: '📦' },
   { value: 'custom', label: 'Custom', icon: '⚙️' },
-]
+];
 
 export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
   const [form, setForm] = useState({
@@ -22,27 +22,55 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
     baseUrl: initial?.baseUrl || '',
     isActive: initial?.isActive ?? true,
     cookieDuration: initial?.cookieDuration ?? 30,
-  })
+    description: initial?.description || '',
+  });
 
-  const change = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
+  // New: logo upload state
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoPreview, setLogoPreview] = useState(initial?.logo ? String(initial.logo) : '');
+  const fileInputRef = useRef(null);
+
+  const change = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
   const submit = (e) => {
-    e.preventDefault()
+    e.preventDefault();
     if (!form.name.trim()) {
-      alert('Store name is required')
-      return
+      alert('Store name is required');
+      return;
     }
     if (!form.baseUrl.trim() || !/^https?:\/\//i.test(form.baseUrl.trim())) {
-      alert('Please enter a valid base URL starting with http/https')
-      return
+      alert('Please enter a valid base URL starting with http/https');
+      return;
     }
-    onSubmit({
+    const payload = {
       ...form,
       commissionRate: Number(form.commissionRate || 0),
       maxCommission: form.maxCommission === '' ? null : Number(form.maxCommission),
       cookieDuration: Number(form.cookieDuration || 30),
-    })
-  }
+    };
+    // Pass the file (if any) to parent handler
+    onSubmit(payload, logoFile || null);
+  };
+
+  const onLogoChange = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    // Basic type check
+    if (!/^image\//.test(f.type)) {
+      alert('Please select an image file');
+      return;
+    }
+    setLogoFile(f);
+    const reader = new FileReader();
+    reader.onload = () => setLogoPreview(reader.result);
+    reader.readAsDataURL(f);
+  };
+
+  const clearLogo = () => {
+    setLogoFile(null);
+    setLogoPreview(initial?.logo ? String(initial.logo) : '');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6">
@@ -62,6 +90,54 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
       </div>
 
       <form id="store-form" onSubmit={submit} className="space-y-6">
+        {/* Logo Upload */}
+        <div className="bg-gray-50 p-4 rounded-lg">
+          <h3 className="font-medium text-gray-900 mb-4 flex items-center gap-2">
+            <ImageIcon className="w-4 h-4" />
+            Store Logo (Optional)
+          </h3>
+
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-lg border border-gray-300 bg-white flex items-center justify-center overflow-hidden">
+              {logoPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoPreview} alt="Logo preview" className="w-full h-full object-contain" />
+              ) : (
+                <Store className="w-6 h-6 text-gray-400" />
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <label
+                className="px-3 py-2 bg-gray-800 text-white text-sm font-semibold rounded-lg hover:bg-gray-900 transition-colors cursor-pointer"
+              >
+                Upload Logo
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={onLogoChange}
+                />
+              </label>
+              {logoPreview && (
+                <button
+                  type="button"
+                  onClick={clearLogo}
+                  className="px-3 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+
+          <p className="text-xs text-gray-500 mt-2">
+            PNG/JPG recommended. Max ~2MB. If no logo is uploaded, a default icon will be shown.
+          </p>
+        </div>
+
         {/* Basic Information */}
         <div className="bg-gray-50 p-4 rounded-lg">
           <h3 className="font-medium text-gray-900 mb-4 flex items-center gap-2">
@@ -87,7 +163,6 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Affiliate Network
               </label>
-              {/* Responsive network selector */}
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                 {networks.map(n => (
                   <button
@@ -352,5 +427,5 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
         </div>
       </form>
     </div>
-  )
+  );
 }

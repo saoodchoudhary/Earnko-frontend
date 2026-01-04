@@ -123,18 +123,18 @@ export default function HomeMarketing() {
                     onClick={() => router.push('/register')}
                     className="px-5 py-2.5 sm:px-7 sm:py-3 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold rounded-xl hover:shadow-xl hover:shadow-blue-500/20 transition-all duration-300 flex items-center gap-2 sm:gap-3 group"
                   >
-                    <Zap className="w-4 h-4 sm:w-5 sm:h-5 group-hover:rotate-12 transition-transform" />
+                    {/* <Zap className="w-4 h-4 sm:w-5 sm:h-5 group-hover:rotate-12 transition-transform" /> */}
                     <span className="text-sm sm:text-base">Start Earning Free</span>
                     <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 group-hover:translate-x-1 transition-transform" />
                   </button>
 
-                  <Link
+                  {/* <Link
                     href="/demo"
                     className="px-5 py-2.5 sm:px-7 sm:py-3 bg-white border border-gray-200 sm:border-2 text-gray-800 font-semibold rounded-xl hover:border-blue-300 hover:shadow-lg transition-all duration-300 flex items-center gap-2 sm:gap-3 group"
                   >
                     <PlayCircle className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
                     <span className="text-sm sm:text-base">Watch Demo</span>
-                  </Link>
+                  </Link> */}
                 </div>
 
                 {/* Trust Indicators */}

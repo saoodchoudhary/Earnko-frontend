@@ -1,100 +1,114 @@
-'use client'
+'use client';
 
-import { useEffect, useRef, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import { toast } from 'react-hot-toast'
-import StoreForm from '../../../../../components/admin/StoreForm'
-import { ArrowLeft, Store, Save, Loader2, AlertCircle, Shield, Tag } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { toast } from 'react-hot-toast';
+import StoreForm from '../../../../../components/admin/StoreForm';
+import { ArrowLeft, Store, Save, Loader2, AlertCircle, Shield, Tag } from 'lucide-react';
 
 export default function AdminStoreEditPage() {
-  const { id } = useParams()
-  const router = useRouter()
-  const [loading, setLoading] = useState(true)
-  const [item, setItem] = useState(null)
-  const [saving, setSaving] = useState(false)
+  const { id } = useParams();
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [item, setItem] = useState(null);
+  const [saving, setSaving] = useState(false);
   const [stats, setStats] = useState({
     clicksTotal: 0,
     transactions: 0,
     commissionTotal: 0,
     pendingAmount: 0,
-  })
-  const envWarned = useRef(false)
+  });
+  const envWarned = useRef(false);
 
-  const getBase = () => process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getBase = () => process.env.NEXT_PUBLIC_BACKEND_URL || '';
   const getHeaders = () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
-    return { Authorization: token ? `Bearer ${token}` : '' }
-  }
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    return { Authorization: token ? `Bearer ${token}` : '' };
+  };
   const ensureEnvConfigured = () => {
-    const base = getBase()
+    const base = getBase();
     if (!base && !envWarned.current) {
-      envWarned.current = true
-      toast.error('Backend URL not configured. Set NEXT_PUBLIC_BACKEND_URL')
+      envWarned.current = true;
+      toast.error('Backend URL not configured. Set NEXT_PUBLIC_BACKEND_URL');
     }
-  }
+  };
   const handleHttpError = async (res) => {
-    let message = 'Request failed'
+    let message = 'Request failed';
     try {
-      const js = await res.clone().json()
-      if (js?.message) message = js.message
+      const js = await res.clone().json();
+      if (js?.message) message = js.message;
     } catch {}
-    if (res.status === 401) message = 'Unauthorized. Please login again.'
-    if (res.status === 403) message = 'Forbidden. Admin access required.'
-    throw new Error(message)
-  }
+    if (res.status === 401) message = 'Unauthorized. Please login again.';
+    if (res.status === 403) message = 'Forbidden. Admin access required.';
+    throw new Error(message);
+  };
 
   useEffect(() => {
-    if (!id) return
-    const controller = new AbortController()
+    if (!id) return;
+    const controller = new AbortController();
     async function load() {
       try {
-        ensureEnvConfigured()
-        setLoading(true)
-        const base = getBase()
+        ensureEnvConfigured();
+        setLoading(true);
+        const base = getBase();
 
         // Load store details
         const res = await fetch(`${base}/api/admin/stores/${id}`, {
           signal: controller.signal,
           headers: getHeaders(),
-        })
-        if (!res.ok) await handleHttpError(res)
-        const data = await res.json()
-        setItem(data?.data?.item || null)
+        });
+        if (!res.ok) await handleHttpError(res);
+        const data = await res.json();
+        setItem(data?.data?.item || null);
 
-        // Load store statistics (backend contract)
+        // Load store statistics
         const statsRes = await fetch(`${base}/api/admin/stores/${id}/stats`, {
           signal: controller.signal,
           headers: getHeaders(),
-        })
+        });
         if (statsRes.ok) {
-          const statsData = await statsRes.json()
-          const s = statsData?.data || {}
+          const statsData = await statsRes.json();
+          const s = statsData?.data || {};
           setStats({
             clicksTotal: Number(s.clicksTotal || 0),
             transactions: Number(s.transactions || 0),
             commissionTotal: Number(s.commissionTotal || 0),
             pendingAmount: Number(s.pendingAmount || 0),
-          })
+          });
         }
       } catch (err) {
         if (err.name !== 'AbortError') {
-          toast.error(err.message || 'Error loading store details')
+          toast.error(err.message || 'Error loading store details');
         }
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
     }
-    load()
-    return () => controller.abort()
+    load();
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
+  }, [id]);
 
-  const handleSubmit = async (payload) => {
+  const uploadLogo = async (storeId, file) => {
+    const base = getBase();
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const fd = new FormData();
+    fd.append('logo', file);
+    const res = await fetch(`${base}/api/admin/stores/${storeId}/logo`, {
+      method: 'POST',
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+      body: fd
+    });
+    if (!res.ok) await handleHttpError(res);
+    return res.json();
+  };
+
+  const handleSubmit = async (payload, logoFile) => {
     try {
-      ensureEnvConfigured()
-      setSaving(true)
-      const base = getBase()
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+      ensureEnvConfigured();
+      setSaving(true);
+      const base = getBase();
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
       const res = await fetch(`${base}/api/admin/stores/${id}`, {
         method: 'PATCH',
         headers: {
@@ -102,18 +116,23 @@ export default function AdminStoreEditPage() {
           Authorization: token ? `Bearer ${token}` : '',
         },
         body: JSON.stringify(payload),
-      })
-      if (!res.ok) await handleHttpError(res)
-      await res.json()
+      });
+      if (!res.ok) await handleHttpError(res);
+      await res.json();
 
-      toast.success('Store updated successfully!')
-      router.push('/admin/stores')
+      // Upload logo if provided
+      if (logoFile) {
+        await uploadLogo(id, logoFile);
+      }
+
+      toast.success('Store updated successfully!');
+      router.push('/admin/stores');
     } catch (err) {
-      toast.error(err.message || 'Failed to update store')
+      toast.error(err.message || 'Failed to update store');
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
-  }
+  };
 
   if (loading) {
     return (
@@ -134,7 +153,7 @@ export default function AdminStoreEditPage() {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   if (!item) {
@@ -153,7 +172,7 @@ export default function AdminStoreEditPage() {
           </button>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -179,7 +198,7 @@ export default function AdminStoreEditPage() {
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
-          {/* Left Column - Store Stats (aligned with backend fields) */}
+          {/* Left Column - Store Stats */}
           <div className="lg:col-span-1 space-y-6">
             <div className="bg-white border border-gray-200 rounded-xl p-6">
               <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -296,31 +315,9 @@ export default function AdminStoreEditPage() {
                 </div>
               </div>
             </div>
-
-            <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-6">
-              <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-blue-600" />
-                Important Notes
-              </h3>
-
-              <ul className="space-y-2 text-sm text-gray-700">
-                <li className="flex items-start gap-2">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5"></div>
-                  <span>Commission rate changes apply to new transactions only</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5"></div>
-                  <span>Store activation may take a few minutes to reflect</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5"></div>
-                  <span>Verify store URLs before saving changes</span>
-                </li>
-              </ul>
-            </div>
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }

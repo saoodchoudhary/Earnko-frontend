@@ -1,67 +1,87 @@
-'use client'
+'use client';
 
-import { useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { toast } from 'react-hot-toast'
-import StoreForm from '../../../../components/admin/StoreForm'
-import { ArrowLeft, Store, Plus } from 'lucide-react'
+import { useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'react-hot-toast';
+import StoreForm from '../../../../components/admin/StoreForm';
+import { ArrowLeft, Store, Plus } from 'lucide-react';
 
 export default function AdminStoreCreatePage() {
-  const router = useRouter()
-  const [saving, setSaving] = useState(false)
-  const envWarned = useRef(false)
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  const envWarned = useRef(false);
 
-  const getBase = () => process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const getBase = () => process.env.NEXT_PUBLIC_BACKEND_URL || '';
   const getHeaders = () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     return {
       'Content-Type': 'application/json',
       Authorization: token ? `Bearer ${token}` : '',
-    }
-  }
+    };
+  };
   const ensureEnvConfigured = () => {
-    const base = getBase()
+    const base = getBase();
     if (!base && !envWarned.current) {
-      envWarned.current = true
-      toast.error('Backend URL not configured. Set NEXT_PUBLIC_BACKEND_URL')
+      envWarned.current = true;
+      toast.error('Backend URL not configured. Set NEXT_PUBLIC_BACKEND_URL');
     }
-  }
+  };
   const handleHttpError = async (res) => {
-    let message = 'Request failed'
+    let message = 'Request failed';
     try {
-      const js = await res.clone().json()
-      if (js?.message) message = js.message
+      const js = await res.clone().json();
+      if (js?.message) message = js.message;
     } catch {}
-    if (res.status === 401) message = 'Unauthorized. Please login again.'
-    if (res.status === 403) message = 'Forbidden. Admin access required.'
-    throw new Error(message)
-  }
+    if (res.status === 401) message = 'Unauthorized. Please login again.';
+    if (res.status === 403) message = 'Forbidden. Admin access required.';
+    throw new Error(message);
+  };
 
-  const handleSubmit = async (payload) => {
+  const uploadLogo = async (storeId, file) => {
+    const base = getBase();
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const fd = new FormData();
+    fd.append('logo', file);
+    const res = await fetch(`${base}/api/admin/stores/${storeId}/logo`, {
+      method: 'POST',
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+      body: fd
+    });
+    if (!res.ok) await handleHttpError(res);
+    return res.json();
+  };
+
+  const handleSubmit = async (payload, logoFile) => {
     try {
-      ensureEnvConfigured()
-      setSaving(true)
-      const base = getBase()
+      ensureEnvConfigured();
+      setSaving(true);
+      const base = getBase();
       const res = await fetch(`${base}/api/admin/stores`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(payload),
-      })
-      if (!res.ok) await handleHttpError(res)
-      await res.json()
+      });
+      if (!res.ok) await handleHttpError(res);
+      const data = await res.json();
+      const createdId = data?.data?.item?._id;
 
-      toast.success('Store created successfully!')
-      router.push('/admin/stores')
+      // Upload logo if provided
+      if (logoFile && createdId) {
+        await uploadLogo(createdId, logoFile);
+      }
+
+      toast.success('Store created successfully!');
+      router.push('/admin/stores');
     } catch (err) {
-      toast.error(err.message || 'Failed to create store')
+      toast.error(err.message || 'Failed to create store');
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
-  }
+  };
 
   const handleCancel = () => {
-    router.push('/admin/stores')
-  }
+    router.push('/admin/stores');
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -118,5 +138,5 @@ export default function AdminStoreCreatePage() {
         </div>
       </div>
     </div>
-  )
+  );
 }

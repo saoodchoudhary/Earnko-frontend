@@ -1,121 +1,129 @@
-'use client'
+'use client';
 
-import { useEffect, useMemo, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import { toast } from 'react-hot-toast'
+import { useEffect, useMemo, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { toast } from 'react-hot-toast';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
-} from 'recharts'
-import Link from 'next/link'
+} from 'recharts';
+import Link from 'next/link';
 import {
-  Store, TrendingUp, Eye, CreditCard, Clock, ArrowUpRight,
+  Store as StoreIcon, TrendingUp, Eye, CreditCard, Clock, ArrowUpRight,
   Edit, Power, ExternalLink, Users, DollarSign, BarChart3,
   RefreshCw, Calendar, Filter, Download, AlertCircle, CheckCircle
-} from 'lucide-react'
+} from 'lucide-react';
 
 export default function AdminStoreDetailPage() {
-  const { id } = useParams()
-  const router = useRouter()
+  const { id } = useParams();
+  const router = useRouter();
 
-  const [store, setStore] = useState(null)
-  const [stats, setStats] = useState(null)
-  const [trend, setTrend] = useState([])
-  const [recentTx, setRecentTx] = useState([])
-  const [recentClicks, setRecentClicks] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [range, setRange] = useState('30d') // 7d, 30d, 90d
-  const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+  const [store, setStore] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [trend, setTrend] = useState([]);
+  const [recentTx, setRecentTx] = useState([]);
+  const [recentClicks, setRecentClicks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [range, setRange] = useState('30d'); // 7d, 30d, 90d
+  const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
   useEffect(() => {
-    if (!id) return
-    const controller = new AbortController()
+    if (!id) return;
+    const controller = new AbortController();
     async function load() {
       try {
-        setLoading(true)
-        const token = localStorage.getItem('token')
-        const h = { Authorization: token ? `Bearer ${token}` : '' }
+        setLoading(true);
+        const token = localStorage.getItem('token');
+        const h = { Authorization: token ? `Bearer ${token}` : '' };
 
         const [r1, r2, r3, r4] = await Promise.all([
           fetch(`${base}/api/admin/stores/${id}`, { signal: controller.signal, headers: h }),
           fetch(`${base}/api/admin/stores/${id}/stats`, { signal: controller.signal, headers: h }),
           fetch(`${base}/api/admin/stores/${id}/trend?range=${range}`, { signal: controller.signal, headers: h }),
           fetch(`${base}/api/admin/stores/${id}/recent?limit=10`, { signal: controller.signal, headers: h }),
-        ])
-        
-        if (!r1.ok || !r2.ok || !r3.ok || !r4.ok) throw new Error('Failed to load store details')
+        ]);
 
-        const d1 = await r1.json(); 
-        const d2 = await r2.json(); 
-        const d3 = await r3.json(); 
-        const d4 = await r4.json()
-        
-        setStore(d1?.data?.item || null)
-        setStats(d2?.data || null)
-        setTrend(d3?.data?.daily || [])
-        setRecentTx(d4?.data?.recentTransactions || [])
-        setRecentClicks(d4?.data?.recentClicks || [])
+        if (!r1.ok || !r2.ok || !r3.ok || !r4.ok) throw new Error('Failed to load store details');
+
+        const d1 = await r1.json();
+        const d2 = await r2.json();
+        const d3 = await r3.json();
+        const d4 = await r4.json();
+
+        setStore(d1?.data?.item || null);
+        setStats(d2?.data || null);
+        setTrend(d3?.data?.daily || []);
+        setRecentTx(d4?.data?.recentTransactions || []);
+        setRecentClicks(d4?.data?.recentClicks || []);
       } catch (err) {
-        if (err.name !== 'AbortError') toast.error(err.message || 'Error loading store')
+        if (err.name !== 'AbortError') toast.error(err.message || 'Error loading store');
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
     }
-    load()
-    return () => controller.abort()
-  }, [id, range])
+    load();
+    return () => controller.abort();
+  }, [id, range, base]);
 
   const toggleActive = async () => {
     try {
-      if (!store) return
-      setSaving(true)
-      const token = localStorage.getItem('token')
+      if (!store) return;
+      setSaving(true);
+      const token = localStorage.getItem('token');
       const res = await fetch(`${base}/api/admin/stores/${store._id}`, {
         method: 'PATCH',
-        headers: { 
-          'Content-Type': 'application/json', 
-          Authorization: token ? `Bearer ${token}` : '' 
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : ''
         },
         body: JSON.stringify({ isActive: !store.isActive })
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.message || 'Failed to update')
-      setStore(data.data.item)
-      toast.success(store.isActive ? 'Store deactivated' : 'Store activated')
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || 'Failed to update');
+      setStore(data.data.item);
+      toast.success(store.isActive ? 'Store deactivated' : 'Store activated');
     } catch (err) {
-      toast.error(err.message || 'Update failed')
+      toast.error(err.message || 'Update failed');
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
-  }
+  };
 
   const refreshData = () => {
-    const controller = new AbortController()
+    const controller = new AbortController();
     async function refresh() {
       try {
-        setLoading(true)
-        const token = localStorage.getItem('token')
-        const h = { Authorization: token ? `Bearer ${token}` : '' }
-        const res = await fetch(`${base}/api/admin/stores/${id}/stats`, { 
-          signal: controller.signal, 
-          headers: h 
-        })
+        setLoading(true);
+        const token = localStorage.getItem('token');
+        const h = { Authorization: token ? `Bearer ${token}` : '' };
+        const res = await fetch(`${base}/api/admin/stores/${id}/stats`, {
+          signal: controller.signal,
+          headers: h
+        });
         if (res.ok) {
-          const data = await res.json()
-          setStats(data?.data || null)
-          toast.success('Stats refreshed')
+          const data = await res.json();
+          setStats(data?.data || null);
+          toast.success('Stats refreshed');
         }
       } catch (error) {
-        console.error('Error refreshing:', error)
+        console.error('Error refreshing:', error);
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
     }
-    refresh()
-    return () => controller.abort()
-  }
+    refresh();
+    return () => controller.abort();
+  };
 
-  const chartData = useMemo(() => Array.isArray(trend) ? trend : [], [trend])
+  const chartData = useMemo(() => Array.isArray(trend) ? trend : [], [trend]);
+
+  // Build logo URL from backend if store.logo is a relative path like "/uploads/..."
+  const logoUrl = useMemo(() => {
+    const l = store?.logo;
+    if (!l) return '';
+    if (typeof l === 'string' && (l.startsWith('http://') || l.startsWith('https://'))) return l;
+    return base ? `${base}${l}` : l; // fallback if base missing
+  }, [store, base]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -124,15 +132,24 @@ export default function AdminStoreDetailPage() {
         <div className="px-6 py-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg bg-gray-800 flex items-center justify-center">
-                <Store className="w-6 h-6 text-white" />
+              <div className="w-12 h-12 rounded-lg bg-gray-100 border border-gray-200 overflow-hidden flex items-center justify-center">
+                {logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={logoUrl}
+                    alt={store?.name || 'Store Logo'}
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <StoreIcon className="w-6 h-6 text-gray-700" />
+                )}
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-2xl font-bold text-gray-900">{store?.name || 'Loading...'}</h1>
                   <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                    store?.isActive 
-                      ? 'bg-green-100 text-green-800' 
+                    store?.isActive
+                      ? 'bg-green-100 text-green-800'
                       : 'bg-gray-100 text-gray-800'
                   }`}>
                     {store?.isActive ? 'Active' : 'Inactive'}
@@ -141,8 +158,8 @@ export default function AdminStoreDetailPage() {
                 <div className="text-sm text-gray-600 mt-1 flex items-center gap-2">
                   {store?.baseUrl ? (
                     <>
-                      <a 
-                        href={store.baseUrl} 
+                      <a
+                        href={store.baseUrl}
                         className="hover:underline flex items-center gap-1"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -155,7 +172,7 @@ export default function AdminStoreDetailPage() {
                 </div>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-2">
               <button
                 onClick={refreshData}
@@ -165,14 +182,14 @@ export default function AdminStoreDetailPage() {
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
               </button>
-              <Link 
+              <Link
                 href={`/admin/stores/${id}/edit`}
                 className="px-4 py-2 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
               >
                 <Edit className="w-4 h-4" />
                 Edit Store
               </Link>
-              <button 
+              <button
                 onClick={toggleActive}
                 disabled={saving}
                 className={`px-4 py-2 font-medium rounded-lg transition-colors flex items-center gap-2 ${
@@ -193,29 +210,29 @@ export default function AdminStoreDetailPage() {
       <div className="px-6 py-6">
         {/* Stats Overview */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <StatCard 
-            title="Total Clicks" 
+          <StatCard
+            title="Total Clicks"
             value={stats?.clicksTotal || 0}
             icon={<Eye className="w-5 h-5" />}
             color="from-blue-600 to-blue-800"
             description="All-time clicks"
           />
-          <StatCard 
-            title="Total Transactions" 
+          <StatCard
+            title="Total Transactions"
             value={stats?.transactions || 0}
             icon={<CreditCard className="w-5 h-5" />}
             color="from-green-600 to-green-800"
             description="Successful orders"
           />
-          <StatCard 
-            title="Total Commission" 
+          <StatCard
+            title="Total Commission"
             value={`₹${Number(stats?.commissionTotal || 0).toLocaleString()}`}
             icon={<DollarSign className="w-5 h-5" />}
             color="from-purple-600 to-purple-800"
             description="Earned commission"
           />
-          <StatCard 
-            title="Pending Amount" 
+          <StatCard
+            title="Pending Amount"
             value={`₹${Number(stats?.pendingAmount || 0).toLocaleString()}`}
             icon={<Clock className="w-5 h-5" />}
             color="from-amber-600 to-amber-800"
@@ -240,8 +257,8 @@ export default function AdminStoreDetailPage() {
                     key={period}
                     onClick={() => setRange(period)}
                     className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${
-                      range === period 
-                        ? 'bg-white shadow-sm text-gray-900 border border-gray-300' 
+                      range === period
+                        ? 'bg-white shadow-sm text-gray-900 border border-gray-300'
                         : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
@@ -279,12 +296,12 @@ export default function AdminStoreDetailPage() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                  <XAxis 
-                    dataKey="date" 
+                  <XAxis
+                    dataKey="date"
                     stroke="#6b7280"
                     tick={{ fontSize: 12 }}
                   />
-                  <YAxis 
+                  <YAxis
                     stroke="#6b7280"
                     tick={{ fontSize: 12 }}
                   />
@@ -295,35 +312,35 @@ export default function AdminStoreDetailPage() {
                       backgroundColor: 'white'
                     }}
                     formatter={(value, name) => {
-                      if (name === 'commission') 
-                        return [`₹${Number(value).toLocaleString()}`, 'Commission']
+                      if (name === 'commission')
+                        return [`₹${Number(value).toLocaleString()}`, 'Commission'];
                       if (name === 'clicks' || name === 'transactions')
-                        return [Number(value).toLocaleString(), name]
-                      return [value, name]
+                        return [Number(value).toLocaleString(), name];
+                      return [value, name];
                     }}
                   />
                   <Legend />
-                  <Area 
-                    type="monotone" 
-                    dataKey="clicks" 
-                    name="Clicks" 
-                    stroke="#3b82f6" 
+                  <Area
+                    type="monotone"
+                    dataKey="clicks"
+                    name="Clicks"
+                    stroke="#3b82f6"
                     fill="url(#colorClicks)"
                     strokeWidth={2}
                   />
-                  <Area 
-                    type="monotone" 
-                    dataKey="transactions" 
-                    name="Transactions" 
-                    stroke="#10b981" 
+                  <Area
+                    type="monotone"
+                    dataKey="transactions"
+                    name="Transactions"
+                    stroke="#10b981"
                     fill="url(#colorTransactions)"
                     strokeWidth={2}
                   />
-                  <Area 
-                    type="monotone" 
-                    dataKey="commission" 
-                    name="Commission" 
-                    stroke="#8b5cf6" 
+                  <Area
+                    type="monotone"
+                    dataKey="commission"
+                    name="Commission"
+                    stroke="#8b5cf6"
                     fill="url(#colorCommission)"
                     strokeWidth={2}
                   />
@@ -340,8 +357,8 @@ export default function AdminStoreDetailPage() {
             <div className="p-6 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-gray-900">Recent Transactions</h3>
-                <Link 
-                  href="/admin/transactions" 
+                <Link
+                  href="/admin/transactions"
                   className="text-sm text-gray-700 hover:text-gray-900 flex items-center gap-1"
                 >
                   View All
@@ -350,7 +367,7 @@ export default function AdminStoreDetailPage() {
               </div>
               <p className="text-gray-600 text-sm mt-1">Latest transactions from this store</p>
             </div>
-            
+
             {loading ? (
               <div className="p-6">
                 <div className="space-y-3">
@@ -419,7 +436,7 @@ export default function AdminStoreDetailPage() {
               <h3 className="text-lg font-bold text-gray-900">Recent Clicks</h3>
               <p className="text-gray-600 text-sm mt-1">Latest click activity on store links</p>
             </div>
-            
+
             {loading ? (
               <div className="p-6">
                 <div className="space-y-3">
@@ -468,7 +485,7 @@ export default function AdminStoreDetailPage() {
         {/* Store Information Section */}
         <div className="mt-6 bg-white border border-gray-200 rounded-xl p-6">
           <h3 className="text-lg font-bold text-gray-900 mb-4">Store Information</h3>
-          
+
           {loading ? (
             <div className="space-y-3">
               <div className="h-4 bg-gray-100 rounded w-48 animate-pulse"></div>
@@ -477,9 +494,23 @@ export default function AdminStoreDetailPage() {
           ) : store ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-3">
-                <div>
-                  <div className="text-xs text-gray-500">Store Name</div>
-                  <div className="text-sm font-medium text-gray-900">{store.name || '-'}</div>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-lg bg-gray-100 border border-gray-200 overflow-hidden flex items-center justify-center">
+                    {logoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={logoUrl}
+                        alt={store?.name || 'Store Logo'}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <StoreIcon className="w-6 h-6 text-gray-700" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">Store Name</div>
+                    <div className="text-sm font-medium text-gray-900">{store.name || '-'}</div>
+                  </div>
                 </div>
                 <div>
                   <div className="text-xs text-gray-500">Base URL</div>
@@ -495,8 +526,8 @@ export default function AdminStoreDetailPage() {
                   <div className="text-xs text-gray-500">Status</div>
                   <div className="flex items-center gap-2">
                     <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                      store.isActive 
-                        ? 'bg-green-100 text-green-800' 
+                      store.isActive
+                        ? 'bg-green-100 text-green-800'
                         : 'bg-gray-100 text-gray-800'
                     }`}>
                       {store.isActive ? 'Active' : 'Inactive'}
@@ -509,7 +540,7 @@ export default function AdminStoreDetailPage() {
                 <div>
                   <div className="text-xs text-gray-500">Commission Rate</div>
                   <div className="text-sm font-medium text-gray-900">
-                    {store.commissionRate ? `${store.commissionRate}%` : 'Not specified'}
+                    {store.commissionRate ? `${store.commissionRate}${store.commissionType === 'fixed' ? ' (₹ fixed)' : '%'}` : 'Not specified'}
                   </div>
                 </div>
                 <div>
@@ -526,7 +557,7 @@ export default function AdminStoreDetailPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 function StatCard({ title, value, icon, color, description }) {
@@ -545,5 +576,5 @@ function StatCard({ title, value, icon, color, description }) {
         <div className="text-xs text-gray-400 mt-2">{description}</div>
       )}
     </div>
-  )
+  );
 }

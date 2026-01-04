@@ -1,12 +1,11 @@
 'use client';
 
 import { Suspense, useEffect, useMemo, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { toast } from 'react-hot-toast';
 import {
-  Store as StoreIcon, Search, TrendingUp,
-  Zap, Star, ChevronRight, Crown, Award,
-  ShoppingBag, Percent, Globe, ExternalLink
+  Store as StoreIcon, Search, Globe, Star, Share2, Percent, X, Copy, Check, Loader2
 } from 'lucide-react';
 
 export default function StoresPage() {
@@ -19,21 +18,21 @@ export default function StoresPage() {
 
 function StoresPageInner() {
   const router = useRouter();
-  const params = useSearchParams();
-
   const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+
   const [stores, setStores] = useState([]);
-  const [offers, setOffers] = useState([]);
-
   const [storesLoading, setStoresLoading] = useState(true);
-  const [offersLoading, setOffersLoading] = useState(true);
 
-  const initialStore = params?.get('store') || 'all';
-  const [selectedStore, setSelectedStore] = useState(initialStore);
-
-  // Search stores (NOT offers)
+  // Search stores
   const [storeQuery, setStoreQuery] = useState('');
   const [queryDebounced, setQueryDebounced] = useState(storeQuery);
+
+  // Share modal state
+  const [shareFor, setShareFor] = useState(null); // selected store object
+  const [shareUrl, setShareUrl] = useState('');
+  const [shareOpen, setShareOpen] = useState(false);
+  const [sharingStoreId, setSharingStoreId] = useState(null); // show loading on specific button
+  const [copied, setCopied] = useState(false);
 
   // Debounce search input for smoother UX
   useEffect(() => {
@@ -56,19 +55,7 @@ function StoresPageInner() {
     return Array.isArray(list) ? list : [];
   };
 
-  const normalizeOffers = (js) => {
-    const d = js?.data;
-    const list = d?.offers || js?.offers || d?.items || js?.items || [];
-    return Array.isArray(list) ? list : [];
-  };
-
-  // Keep selectedStore in sync if URL query changes
-  useEffect(() => {
-    if (initialStore !== selectedStore) setSelectedStore(initialStore);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialStore]);
-
-  // Load stores from backend
+  // Load stores from backend (public)
   useEffect(() => {
     const controller = new AbortController();
     async function loadStores() {
@@ -80,7 +67,8 @@ function StoresPageInner() {
         if (!res.ok) throw new Error(js?.message || `Failed to load stores (HTTP ${res.status})`);
         const list = normalizeStores(js);
         setStores(list);
-      } catch {
+      } catch (err) {
+        console.error('Load stores error:', err);
         setStores([]);
       } finally {
         setStoresLoading(false);
@@ -90,39 +78,6 @@ function StoresPageInner() {
     return () => controller.abort();
   }, [base]);
 
-  // Load offers from backend — use storeId when a specific store is selected
-  useEffect(() => {
-    const controller = new AbortController();
-    async function loadOffers() {
-      try {
-        setOffersLoading(true);
-        if (!base) { setOffers([]); return; }
-        const sp = new URLSearchParams();
-        if (selectedStore && selectedStore !== 'all') sp.set('storeId', selectedStore);
-        const url = `${base}/api/public/offers${sp.toString() ? `?${sp.toString()}` : ''}`;
-        const res = await fetch(url, { signal: controller.signal });
-        const js = await safeJson(res);
-        if (!res.ok) throw new Error(js?.message || `Failed to load offers (HTTP ${res.status})`);
-        const list = normalizeOffers(js);
-        setOffers(list);
-      } catch {
-        setOffers([]);
-      } finally {
-        setOffersLoading(false);
-      }
-    }
-    loadOffers();
-    return () => controller.abort();
-  }, [base, selectedStore]);
-
-  // Reflect selectedStore in URL
-  useEffect(() => {
-    const search = new URLSearchParams();
-    if (selectedStore && selectedStore !== 'all') search.set('store', selectedStore);
-    const qs = search.toString();
-    router.replace(`/stores${qs ? `?${qs}` : ''}`);
-  }, [selectedStore, router]);
-
   // Filter stores by search query
   const visibleStores = useMemo(() => {
     const q = queryDebounced.trim().toLowerCase();
@@ -131,31 +86,104 @@ function StoresPageInner() {
     return list.filter(s => String(s.name || '').toLowerCase().includes(q));
   }, [stores, queryDebounced]);
 
-  // Selected store object
-  const selectedStoreData = useMemo(
-    () => (selectedStore === 'all' ? null : (stores || []).find(s => s._id === selectedStore) || null),
-    [selectedStore, stores]
-  );
-
-  // Offers (already filtered by backend if store selected)
-  const filteredOffers = useMemo(() => {
-    const baseList = offers || [];
-    // Basic stable sort: by rate desc, then updated/created desc
-    return [...baseList].sort((a, b) => {
-      const rateDiff = (b.rate || 0) - (a.rate || 0);
-      if (rateDiff !== 0) return rateDiff;
-      return new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0);
-    });
-  }, [offers]);
-
+  // Only logged-in users can generate/share affiliate links
   const requireLoginToGenerate = () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) router.push('/login?next=/dashboard/affiliate');
-    else router.push('/dashboard/affiliate');
+    if (!token) router.push('/login?next=/stores');
+    return !!token;
   };
 
-  // Formatting
-  const fmtPct = (n) => `${Number(n || 0)}%`;
+  // Generate provider (Cuelinks) affiliate link and use it directly (remove backend share link)
+  const shareStoreLink = async (store) => {
+    // Guard login
+    if (!requireLoginToGenerate()) return;
+
+    const url = store?.baseUrl;
+    if (!url) {
+      toast.error('This store does not have a shareable base URL yet');
+      return;
+    }
+
+    try {
+      setSharingStoreId(store._id);
+      setCopied(false);
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${base}/api/affiliate/cuelinks/deeplink`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : ''
+        },
+        body: JSON.stringify({ url })
+      });
+      const js = await safeJson(res);
+      if (!res.ok) {
+        // Specific handling when campaign approval is required
+        if (res.status === 409 && js?.code === 'campaign_approval_required') {
+          toast.error('Campaign requires approval in Cuelinks for this store');
+          return;
+        }
+        throw new Error(js?.message || 'Failed to generate link');
+      }
+
+      // Use provider's affiliate link directly
+      const providerLink = js?.data?.link;
+      if (!providerLink) throw new Error('No provider link returned');
+
+      setShareFor(store);
+      setShareUrl(providerLink);
+      setShareOpen(true);
+    } catch (err) {
+      toast.error(err?.message || 'Failed to generate link');
+    } finally {
+      setSharingStoreId(null);
+    }
+  };
+
+  // Helper: build public logo URL from backend if relative path like "/uploads/..."
+  const getLogoUrl = (logo) => {
+    if (!logo || typeof logo !== 'string') return '';
+    if (logo.startsWith('http://') || logo.startsWith('https://')) return logo;
+    return `${base}${logo}`;
+  };
+
+  const closeShare = () => {
+    setShareOpen(false);
+    setShareFor(null);
+    setShareUrl('');
+    setCopied(false);
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      toast.success('Copied!');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Copy failed');
+    }
+  };
+
+  const openShareWindow = (url) => {
+    try {
+      window.open(url, '_blank', 'noopener,noreferrer,width=900,height=650');
+    } catch {
+      // ignore
+    }
+  };
+
+  const messageText = shareFor?.name
+    ? `Check out ${shareFor.name} deals`
+    : `Check out this store`;
+
+  const encodedUrl = encodeURIComponent(shareUrl || '');
+  const encodedText = encodeURIComponent(messageText);
+
+  const whatsappUrl = `https://wa.me/?text=${encodedText}%20${encodedUrl}`;
+  const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`;
+  const twitterUrl = `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`;
+  const telegramUrl = `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
@@ -168,8 +196,8 @@ function StoresPageInner() {
                 <StoreIcon className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl md:text-3xl font-bold">Stores & Offers</h1>
-                <p className="text-blue-100 mt-1">Discover high-commission affiliate programs</p>
+                <h1 className="text-2xl md:text-3xl font-bold">Stores</h1>
+                <p className="text-blue-100 mt-1">Discover affiliate-ready merchants</p>
               </div>
             </div>
             <div className="text-right">
@@ -181,7 +209,7 @@ function StoresPageInner() {
           {/* Top toolbar: Search stores */}
           <div className="mt-6">
             <div className="relative">
-              <Search className="absolute top-6 left-3  -translate-y-1/2 w-4 h-4 text-white/70" />
+              <Search className="absolute top-6 left-3 -translate-y-1/2 w-4 h-4 text-white/70" />
               <input
                 type="search"
                 placeholder="Search stores..."
@@ -199,20 +227,19 @@ function StoresPageInner() {
 
       {/* Main Content */}
       <div className="container mx-auto px-4 py-6">
-        {/* Stores Grid (no horizontal scroll; responsive grid) */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
+        {/* Stores Grid only */}
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-gray-900">Browse Stores</h2>
-            <Link href="/stores" className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1">
+            <Link href="/stores" className="text-sm text-blue-600 hover:text-blue-700">
               View All
-              <ChevronRight className="w-4 h-4" />
             </Link>
           </div>
 
           {storesLoading ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               {Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse" />
+                <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />
               ))}
             </div>
           ) : visibleStores.length === 0 ? (
@@ -221,240 +248,167 @@ function StoresPageInner() {
               <div className="text-gray-600">No stores match your search</div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              {/* All Stores tile */}
-              <StoreCard
-                active={selectedStore === 'all'}
-                onClick={() => setSelectedStore('all')}
-                label="All Stores"
-                icon={<Globe className="w-5 h-5 text-blue-600" />}
-                meta={`${stores.length} total`}
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {visibleStores.map(store => (
-                <StoreCard
+                <StoreItem
                   key={store._id}
-                  active={selectedStore === store._id}
-                  onClick={() => setSelectedStore(store._id)}
-                  label={store.name}
-                  logo={store.logo}
-                  meta={store.affiliateNetwork ? store.affiliateNetwork : 'Affiliate'}
+                  store={store}
+                  onShare={() => shareStoreLink(store)}
+                  getLogoUrl={getLogoUrl}
+                  sharing={sharingStoreId === store._id}
                 />
               ))}
             </div>
           )}
         </div>
+      </div>
 
-        {/* Stats & Info */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <StatTile
-            icon={<ShoppingBag className="w-5 h-5 text-blue-600" />}
-            label="Available Offers"
-            value={offersLoading ? 0 : filteredOffers.length}
-            bg="from-blue-100 to-cyan-100"
+      {/* Share Modal */}
+      {shareOpen && (
+        <div className="fixed inset-0 z-[60]">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={closeShare}
           />
-          <StatTile
-            icon={<Percent className="w-5 h-5 text-green-600" />}
-            label="Avg. Commission"
-            value={
-              offersLoading || filteredOffers.length === 0
-                ? 0
-                : Math.round(filteredOffers.reduce((sum, o) => sum + (o.rate || 0), 0) / filteredOffers.length)
-            }
-            suffix="%"
-            bg="from-green-100 to-emerald-100"
-          />
-          <StatTile
-            icon={<Zap className="w-5 h-5 text-amber-600" />}
-            label="Top Commission"
-            value={offersLoading || filteredOffers.length === 0 ? 0 : Math.max(...filteredOffers.map(o => o.rate || 0))}
-            suffix="%"
-            bg="from-amber-100 to-orange-100"
-          />
-        </div>
-
-        {/* Offers Grid */}
-        <div className="mb-6 bg-white border border-gray-200 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">
-                {selectedStore === 'all' ? 'All Offers' : `${selectedStoreData?.name || 'Store'} Offers`}
-              </h2>
-              <p className="text-gray-600 text-sm mt-1">
-                {offersLoading ? 'Loading offers...' : `${filteredOffers.length} offers available`}
-              </p>
-            </div>
-            <div className="text-sm text-gray-500">
-              Click on any offer to generate affiliate link
-            </div>
-          </div>
-
-          {offersLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="h-48 bg-gray-100 rounded-xl animate-pulse" />
-              ))}
-            </div>
-          ) : filteredOffers.length === 0 ? (
-            <div className="text-center py-12">
-              <ShoppingBag className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-              <h3 className="text-lg font-medium text-gray-700 mb-1">No Offers Found</h3>
-              <p className="text-gray-600 mb-4">
-                {selectedStore === 'all' ? 'No offers available.' : 'No offers available for the selected store.'}
-              </p>
-              <button
-                onClick={() => {
-                  setSelectedStore('all');
-                }}
-                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold rounded-lg hover:shadow-lg transition-all"
-              >
-                View All Offers
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredOffers.map(offer => (
-                <OfferCard key={offer._id} offer={offer} onGenerate={requireLoginToGenerate} />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Featured Section */}
-        {!offersLoading && filteredOffers.some(o => o.featured) && (
-          <div className="bg-gradient-to-r from-blue-600 to-cyan-500 rounded-xl p-6 text-white">
-            <div className="flex items-center gap-3 mb-4">
-              <Crown className="w-6 h-6" />
-              <div>
-                <h3 className="text-lg font-bold">Featured Offers</h3>
-                <p className="text-blue-100">Special high-commission opportunities</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredOffers.filter(o => o.featured).slice(0, 2).map(offer => (
-                <div key={offer._id} className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      {offer.store?.logo ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={offer.store.logo} alt={offer.store.name} className="w-6 h-6 rounded" />
-                      ) : (
-                        <StoreIcon className="w-5 h-5" />
-                      )}
-                      <span className="font-medium">{offer.store?.name}</span>
-                    </div>
-                    <span className="px-2 py-1 bg-white/20 rounded-full text-xs font-bold">
-                      {fmtPct(offer.rate || 0)} Commission
-                    </span>
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[92vw] max-w-md bg-white rounded-2xl shadow-2xl border border-gray-200">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center">
+                  <Share2 className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-semibold text-gray-900 truncate">
+                    Share {shareFor?.name || 'Store'}
                   </div>
-                  <div className="text-sm mb-2">{offer.title || offer.name}</div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="flex items-center gap-1">
-                      <Zap className="w-3 h-3" />
-                      High Converting
-                    </span>
-                    <button onClick={requireLoginToGenerate} className="text-white hover:text-blue-100 flex items-center gap-1">
-                      Generate Link
-                      <ExternalLink className="w-3 h-3" />
-                    </button>
+                  <div className="text-xs text-gray-500 truncate">
+                    Choose a platform or copy the link
                   </div>
                 </div>
-              ))}
+              </div>
+              <button className="p-2 rounded-lg hover:bg-gray-100" onClick={closeShare}>
+                <X className="w-4 h-4 text-gray-600" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* Share link preview */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <div className="text-xs text-gray-500 mb-1">Affiliate link</div>
+                <div className="text-sm text-gray-900 break-all">{shareUrl}</div>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    onClick={handleCopy}
+                    className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Share actions */}
+              <div className="grid grid-cols-2 gap-3">
+                <ShareTile
+                  label="WhatsApp"
+                  color="bg-green-50 text-green-700 border-green-200"
+                  onClick={() => openShareWindow(`https://wa.me/?text=${encodeURIComponent(`${messageText} ${shareUrl}`)}`)}
+                />
+                <ShareTile
+                  label="Facebook"
+                  color="bg-blue-50 text-blue-700 border-blue-200"
+                  onClick={() => openShareWindow(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`)}
+                />
+                <ShareTile
+                  label="Telegram"
+                  color="bg-cyan-50 text-cyan-700 border-cyan-200"
+                  onClick={() => openShareWindow(`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(messageText)}`)}
+                />
+                <ShareTile
+                  label="Twitter"
+                  color="bg-sky-50 text-sky-700 border-sky-200"
+                  onClick={() => openShareWindow(`https://twitter.com/intent/tweet?text=${encodeURIComponent(messageText)}&url=${encodeURIComponent(shareUrl)}`)}
+                />
+              </div>
+
+              <div className="text-[11px] text-gray-500">
+                Note: This is the direct affiliate link from the provider. Purchases tracked to this link will count toward your earnings.
+              </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function StoreCard({ label, logo, icon, active, onClick, meta }) {
+function ShareTile({ label, color, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`group flex items-center gap-3 px-3 py-3 rounded-xl border transition-all text-left w-full
-        ${active ? 'bg-gradient-to-r from-blue-50 to-cyan-50 border-blue-200 shadow-sm' : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-md'}`}
-      aria-pressed={active ? 'true' : 'false'}
+      className={`border ${color} rounded-lg px-3 py-2 font-semibold text-sm hover:shadow-sm transition-all`}
     >
-      <div className="w-10 h-10 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center shrink-0">
-        {logo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={logo} alt={label} className="w-6 h-6 object-contain" />
-        ) : icon ? (
-          <div className="w-6 h-6 text-blue-600">{icon}</div>
-        ) : (
-          <StoreIcon className="w-5 h-5 text-blue-600" />
-        )}
-      </div>
-      <div className="min-w-0">
-        <div className="font-medium text-gray-900 truncate">{label}</div>
-        <div className="text-xs text-gray-500 truncate">{meta || 'Affiliate'}</div>
-      </div>
-      {active ? (
-        <Star className="w-4 h-4 text-amber-500 ml-auto" />
-      ) : null}
+      {label}
     </button>
   );
 }
 
-function StatTile({ icon, label, value, suffix = '', bg = 'from-gray-100 to-gray-200' }) {
-  return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
-      <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${bg} flex items-center justify-center`}>
-          {icon}
-        </div>
-        <div>
-          <div className="text-sm text-gray-500">{label}</div>
-          <div className="text-lg font-bold text-gray-900">{value}{suffix}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
+function StoreItem({ store, onShare, getLogoUrl, sharing }) {
+  const rateText =
+    typeof store.commissionRate === 'number'
+      ? `${Number(store.commissionRate)}${store.commissionType === 'percentage' ? '%' : ''}`
+      : null;
 
-function OfferCard({ offer, onGenerate }) {
+  const logoUrl = getLogoUrl(store.logo);
+
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-lg hover:border-blue-300 transition-all group">
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-50 to-cyan-50 border border-gray-200 flex items-center justify-center">
-            {offer.store?.logo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={offer.store.logo} alt={offer.store.name} className="w-6 h-6 object-contain" />
-            ) : (
-              <StoreIcon className="w-5 h-5 text-blue-600" />
-            )}
+    <div className="group bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md hover:border-blue-300 transition-all">
+      <div className="flex items-start gap-3 mb-3">
+        <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-50 to-cyan-50 border border-gray-200 flex items-center justify-center shrink-0 overflow-hidden">
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoUrl} alt={store.name} className="w-10 h-10 object-contain" />
+          ) : (
+            <StoreIcon className="w-6 h-6 text-blue-600" />
+          )}
+        </div>
+        <div className="min-w-0">
+          <div className="font-semibold text-gray-900 truncate flex items-center gap-1">
+            {store.name}
+            {store.isActive && <Star className="w-3.5 h-3.5 text-amber-500" />}
           </div>
-          <div>
-            <div className="text-sm font-medium text-gray-900">{offer.store?.name}</div>
-            <div className="text-xs text-gray-500">Affiliate Program</div>
+          <div className="text-xs text-gray-500 truncate flex items-center gap-1">
+            <Globe className="w-3.5 h-3.5" />
+            {store.baseUrl ? new URL(store.baseUrl).hostname.replace(/^www\./, '') : '—'}
           </div>
         </div>
-        {offer.featured && <Award className="w-4 h-4 text-amber-500" />}
       </div>
 
-      <h3 className="font-bold text-gray-900 mb-2 line-clamp-2">
-        {offer.title || offer.categoryKey}
-      </h3>
-
-      <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-        {offer.description || 'High converting affiliate offer'}
-      </p>
-
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-lg font-bold text-green-600">
-          Up to {offer.commissionRate || 0}%
+      <div className="flex items-center justify-between text-sm mb-3">
+        <div className="flex items-center gap-1 text-gray-600">
+          <Percent className="w-4 h-4 text-green-600" />
+          <span className="font-medium">{rateText || 'Variable'}</span>
+          <span className="text-xs text-gray-500 ml-1">Commission</span>
         </div>
-        <div className="text-xs text-gray-500">Commission</div>
+        <div className="text-xs text-gray-500">
+          Cookie: {store.cookieDuration ? `${store.cookieDuration}d` : '—'}
+        </div>
       </div>
 
-      <button
-        className="w-full py-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold rounded-lg hover:shadow-lg transition-all flex items-center justify-center gap-2 group-hover:scale-105"
-        onClick={onGenerate}
-      >
-        <Zap className="w-4 h-4" />
-        Generate Link
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onShare}
+          disabled={sharing}
+          className={`flex-1 py-2 text-white font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
+            sharing
+              ? 'bg-blue-400 cursor-wait'
+              : 'bg-gradient-to-r from-blue-600 to-cyan-500 hover:shadow-lg'
+          }`}
+          title="Generate direct affiliate link for this store"
+        >
+          {sharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+          {sharing ? 'Generating...' : 'Share Store'}
+        </button>
+      </div>
     </div>
   );
 }
