@@ -1,10 +1,11 @@
 import './globals.css';
 import { Providers } from '../context/Providers';
 import { Toaster } from 'react-hot-toast';
+import Analytics from '@/components/Analytics';
 
 export const metadata = {
   // Use your production site URL for absolute OpenGraph/Twitter links
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://earnko.in'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://www.earnko.com'),
 
   title: {
     default: 'Earnko — Earn by Sharing',
@@ -100,6 +101,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
+        <Analytics/>
         <Providers>
           {children}
           <Toaster position="top-right" />

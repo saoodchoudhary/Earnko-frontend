@@ -43,10 +43,10 @@ export default function Footer() {
             <div className="space-y-3">
               <p className="text-sm font-medium">Connect with us</p>
               <div className="flex items-center gap-2">
-                <SocialLink href="#" label="Twitter">
+                <SocialLink href="https://www.x.com/earnko_official/" label="Twitter">
                   <Twitter className="w-4 h-4" />
                 </SocialLink>
-                <SocialLink href="#" label="Instagram">
+                <SocialLink href="https://www.instagram.com/earnko_official" label="Instagram">
                   <Instagram className="w-4 h-4" />
                 </SocialLink>
                 <SocialLink href="#" label="LinkedIn">
