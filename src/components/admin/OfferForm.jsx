@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import {
   Store, Tag, Percent, DollarSign, Hash, ToggleLeft,
-  ToggleRight, Globe, BarChart3, AlertCircle, CheckCircle
+  ToggleRight, BarChart3, AlertCircle, CheckCircle
 } from 'lucide-react'
 
 export default function OfferForm({ initial, onSubmit, submitting }) {
@@ -23,6 +23,15 @@ export default function OfferForm({ initial, onSubmit, submitting }) {
 
   const [jsonError, setJsonError] = useState('')
 
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      try { return await res.json() } catch { return null }
+    }
+    const txt = await res.text().catch(() => '')
+    return { success: false, message: txt }
+  }
+
   useEffect(() => {
     const controller = new AbortController()
     let ignore = false
@@ -31,15 +40,33 @@ export default function OfferForm({ initial, onSubmit, submitting }) {
       try {
         setLoadingStores(true)
         const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+        if (!base) {
+          toast.error('NEXT_PUBLIC_BACKEND_URL not set')
+          setStores([])
+          return
+        }
+
         const res = await fetch(`${base}/api/stores`, { signal: controller.signal })
-        const data = await res.json()
-        if (res.ok && !ignore) {
+        const data = await safeJson(res)
+
+        if (ignore) return
+
+        if (res.ok) {
           setStores(data?.data?.stores || [])
+        } else {
+          const msg = data?.message || `Failed to load stores (HTTP ${res.status})`
+          // avoid HTML confusion
+          if (String(msg).startsWith('<!DOCTYPE') || String(msg).includes('<html')) {
+            toast.error('Stores API returned HTML. Check NEXT_PUBLIC_BACKEND_URL/backend.')
+          } else {
+            toast.error(msg)
+          }
+          setStores([])
         }
       } catch (err) {
-        // Ignore aborts triggered by cleanup (React 18 Strict Mode runs effects twice in dev)
         if (err?.name !== 'AbortError' && !ignore) {
           console.error('Error loading stores:', err)
+          toast.error('Error loading stores')
         }
       } finally {
         if (!ignore) setLoadingStores(false)
@@ -56,7 +83,7 @@ export default function OfferForm({ initial, onSubmit, submitting }) {
   const change = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
   const handleMetadataChange = (e) => {
-    const value = e.target.value.trim()
+    const value = String(e.target.value || '').trim()
     try {
       if (value) {
         const parsed = JSON.parse(value)
@@ -66,7 +93,7 @@ export default function OfferForm({ initial, onSubmit, submitting }) {
         setForm(prev => ({ ...prev, metadata: {} }))
         setJsonError('')
       }
-    } catch (err) {
+    } catch {
       setJsonError('Invalid JSON format')
     }
   }
@@ -74,20 +101,10 @@ export default function OfferForm({ initial, onSubmit, submitting }) {
   const submit = (e) => {
     e.preventDefault()
 
-    if (!form.store) {
-      toast.error('Please select a store')
-      return
-    }
-
-    if (!form.categoryKey) {
-      toast.error('Category key is required')
-      return
-    }
-
-    if (form.commissionRate === '' || isNaN(Number(form.commissionRate))) {
-      toast.error('Commission rate is required')
-      return
-    }
+    if (!form.store) return toast.error('Please select a store')
+    if (!form.categoryKey) return toast.error('Category key is required')
+    if (form.commissionRate === '' || isNaN(Number(form.commissionRate))) return toast.error('Commission rate is required')
+    if (jsonError) return toast.error('Please fix metadata JSON')
 
     onSubmit({
       ...form,
@@ -98,7 +115,6 @@ export default function OfferForm({ initial, onSubmit, submitting }) {
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6">
-      {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center flex-shrink-0">
           <Tag className="w-5 h-5 text-white" />
@@ -122,6 +138,7 @@ export default function OfferForm({ initial, onSubmit, submitting }) {
               Store
             </div>
           </label>
+
           {loadingStores ? (
             <div className="h-11 sm:h-12 bg-gray-100 rounded-lg animate-pulse"></div>
           ) : (
@@ -134,12 +151,13 @@ export default function OfferForm({ initial, onSubmit, submitting }) {
                 <option value="">Select a store</option>
                 {stores.map(s => (
                   <option key={s._id} value={s._id}>
-                    {s.name} {s.domain ? `(${s.domain})` : ''}
+                    {s.name}
                   </option>
                 ))}
               </select>
             </div>
           )}
+
           {!loadingStores && stores.length === 0 && (
             <div className="mt-2">
               <input
@@ -148,7 +166,9 @@ export default function OfferForm({ initial, onSubmit, submitting }) {
                 value={form.store}
                 onChange={(e) => change('store', e.target.value)}
               />
-              <div className="text-xs text-gray-500 mt-1">No stores found. Enter Store ID manually.</div>
+              <div className="text-xs text-gray-500 mt-1">
+                No stores found. Enter Store ID manually.
+              </div>
             </div>
           )}
         </div>
@@ -274,9 +294,6 @@ export default function OfferForm({ initial, onSubmit, submitting }) {
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
             </select>
-            <div className="text-xs text-gray-500 mt-1">
-              {form.isActive ? 'This offer will be visible to users' : 'This offer will be hidden from users'}
-            </div>
           </div>
 
           <div>
@@ -286,86 +303,53 @@ export default function OfferForm({ initial, onSubmit, submitting }) {
                 Additional Metadata (JSON)
               </div>
             </label>
-            <div className="relative">
-              <textarea
-                className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border rounded-lg focus:outline-none focus:ring-2 text-xs sm:text-sm font-mono break-words ${
-                  jsonError
-                    ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
-                    : 'border-gray-300 focus:border-gray-800 focus:ring-gray-800'
-                }`}
-                rows={4}
-                placeholder='{"tags": ["electronics", "tech"], "priority": 1}'
-                defaultValue={JSON.stringify(form.metadata, null, 2)}
-                onBlur={handleMetadataChange}
-                onKeyUp={(e) => {
-                  if (e.key === 'Enter' && e.ctrlKey) {
-                    handleMetadataChange(e)
-                  }
-                }}
-              />
-              {jsonError && (
-                <div className="flex items-center gap-1 text-xs text-red-600 mt-1">
-                  <AlertCircle className="w-3 h-3" />
-                  {jsonError}
-                </div>
-              )}
-              {!jsonError && Object.keys(form.metadata).length > 0 && (
-                <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
-                  <CheckCircle className="w-3 h-3" />
-                  Valid JSON
-                </div>
-              )}
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              Optional additional data. Use CTRL+Enter to validate.
-            </div>
+
+            <textarea
+              className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border rounded-lg focus:outline-none focus:ring-2 text-xs sm:text-sm font-mono ${
+                jsonError
+                  ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
+                  : 'border-gray-300 focus:border-gray-800 focus:ring-gray-800'
+              }`}
+              rows={4}
+              placeholder='{"tags":["electronics"],"priority":1}'
+              defaultValue={JSON.stringify(form.metadata, null, 2)}
+              onBlur={handleMetadataChange}
+            />
+
+            {jsonError ? (
+              <div className="flex items-center gap-1 text-xs text-red-600 mt-1">
+                <AlertCircle className="w-3 h-3" />
+                {jsonError}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
+                <CheckCircle className="w-3 h-3" />
+                Valid JSON (or empty)
+              </div>
+            )}
           </div>
         </div>
 
         {/* Form Actions */}
         <div className="pt-6 border-t border-gray-200">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="text-xs sm:text-sm text-gray-500">
-              {form.isActive ? (
-                <span className="flex items-center gap-1 text-green-600">
-                  <CheckCircle className="w-4 h-4" />
-                  Offer will be active
-                </span>
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              className="px-4 sm:px-6 py-2 bg-gradient-to-r from-gray-800 to-gray-900 text-white font-semibold rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              disabled={submitting}
+            >
+              {submitting ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Saving...
+                </>
               ) : (
-                <span className="flex items-center gap-1 text-gray-600">
-                  <AlertCircle className="w-4 h-4" />
-                  Offer will be inactive
-                </span>
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  {initial ? 'Update Offer' : 'Create Offer'}
+                </>
               )}
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              <button
-                type="button"
-                onClick={() => window.history.back()}
-                className="px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
-                disabled={submitting}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 sm:px-6 py-2 bg-gradient-to-r from-gray-800 to-gray-900 text-white font-semibold rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                disabled={submitting}
-              >
-                {submitting ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="w-4 h-4" />
-                    {initial ? 'Update Offer' : 'Create Offer'}
-                  </>
-                )}
-              </button>
-            </div>
+            </button>
           </div>
         </div>
       </form>

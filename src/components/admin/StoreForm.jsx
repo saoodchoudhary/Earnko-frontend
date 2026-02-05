@@ -6,8 +6,12 @@ import { Store, Globe, Percent, Clock, Shield, Link as LinkIcon, Save, X, Image 
 const networks = [
   { value: 'manual', label: 'Manual', icon: '👨‍💼' },
   { value: 'cuelinks', label: 'Cuelinks', icon: '🔗' },
-  { value: 'amazon', label: 'Amazon', icon: '🛒' },
-  { value: 'flipkart', label: 'Flipkart', icon: '📦' },
+
+  // Added:
+  { value: 'trackier', label: 'VCommission', icon: '📈' },
+  { value: 'extrape', label: 'ExtraPe', icon: '🧩' },
+
+  // Existing:
   { value: 'custom', label: 'Custom', icon: '⚙️' },
 ];
 
@@ -25,7 +29,6 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
     description: initial?.description || '',
   });
 
-  // New: logo upload state
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(initial?.logo ? String(initial.logo) : '');
   const fileInputRef = useRef(null);
@@ -42,20 +45,20 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
       alert('Please enter a valid base URL starting with http/https');
       return;
     }
+
     const payload = {
       ...form,
       commissionRate: Number(form.commissionRate || 0),
       maxCommission: form.maxCommission === '' ? null : Number(form.maxCommission),
       cookieDuration: Number(form.cookieDuration || 30),
     };
-    // Pass the file (if any) to parent handler
+
     onSubmit(payload, logoFile || null);
   };
 
   const onLogoChange = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    // Basic type check
     if (!/^image\//.test(f.type)) {
       alert('Please select an image file');
       return;
@@ -74,7 +77,6 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6">
-      {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <div className="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center flex-shrink-0">
           <Store className="w-5 h-5 text-white" />
@@ -108,9 +110,7 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2">
-              <label
-                className="px-3 py-2 bg-gray-800 text-white text-sm font-semibold rounded-lg hover:bg-gray-900 transition-colors cursor-pointer"
-              >
+              <label className="px-3 py-2 bg-gray-800 text-white text-sm font-semibold rounded-lg hover:bg-gray-900 transition-colors cursor-pointer">
                 Upload Logo
                 <input
                   ref={fileInputRef}
@@ -134,7 +134,7 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
           </div>
 
           <p className="text-xs text-gray-500 mt-2">
-            PNG/JPG recommended. Max ~2MB. If no logo is uploaded, a default icon will be shown.
+            PNG/JPG recommended. Max ~2MB.
           </p>
         </div>
 
@@ -154,7 +154,7 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
                 className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-transparent"
                 value={form.name}
                 onChange={(e) => change('name', e.target.value)}
-                placeholder="e.g., Amazon India"
+                placeholder="e.g., Myntra"
                 required
               />
             </div>
@@ -218,13 +218,10 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
                   max="100"
                   value={form.commissionRate}
                   onChange={(e) => change('commissionRate', e.target.value)}
-                  placeholder="e.g., 8"
                   required
                 />
                 {form.commissionType === 'percentage' && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">
-                    %
-                  </div>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">%</div>
                 )}
               </div>
             </div>
@@ -270,7 +267,6 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
                 min="0"
                 value={form.maxCommission}
                 onChange={(e) => change('maxCommission', e.target.value)}
-                placeholder="e.g., 500"
               />
             </div>
           </div>
@@ -345,9 +341,7 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
                   value={form.cookieDuration}
                   onChange={(e) => change('cookieDuration', e.target.value)}
                 />
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">
-                  days
-                </div>
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">days</div>
               </div>
               <p className="text-xs text-gray-500 mt-2">
                 How long affiliate cookies remain valid
@@ -386,7 +380,7 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
           </div>
         </div>
 
-        {/* Form Actions */}
+        {/* Actions */}
         <div className="pt-6 border-t border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="text-xs sm:text-sm text-gray-500">

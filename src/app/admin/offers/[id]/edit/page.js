@@ -14,6 +14,15 @@ export default function AdminOfferEditPage() {
   const [saving, setSaving] = useState(false)
   const [auditLogs, setAuditLogs] = useState([])
 
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      try { return await res.json() } catch { return null }
+    }
+    const txt = await res.text().catch(() => '')
+    return { success: false, message: txt }
+  }
+
   useEffect(() => {
     if (!id) return
     const controller = new AbortController()
@@ -21,33 +30,35 @@ export default function AdminOfferEditPage() {
     async function loadData() {
       try {
         setLoading(true)
-        const token = localStorage.getItem('token')
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+        const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+        if (!base) {
+          toast.error('NEXT_PUBLIC_BACKEND_URL not set')
+          return
+        }
 
-        // Load offer details
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/category-commissions/${id}`, {
+        const res = await fetch(`${base}/api/admin/category-commissions/${id}`, {
           signal: controller.signal,
           headers: { Authorization: token ? `Bearer ${token}` : '' }
         })
 
-        const data = await res.json()
+        const data = await safeJson(res)
         if (!res.ok) throw new Error(data?.message || 'Failed to load offer')
         setItem(data?.data?.item || null)
 
-        // Load audit logs for this offer (optional)
-        const logsRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/audit-logs?entityId=${id}&entityType=offer`, {
-          signal: controller.signal,
-          headers: { Authorization: token ? `Bearer ${token}` : '' }
-        })
-
-        if (logsRes.ok) {
-          const logsData = await logsRes.json()
-          setAuditLogs(logsData.data?.logs || [])
-        }
-
+        // Optional audit logs: ignore failures
+        try {
+          const logsRes = await fetch(`${base}/api/admin/audit-logs?entityId=${id}&entityType=offer`, {
+            signal: controller.signal,
+            headers: { Authorization: token ? `Bearer ${token}` : '' }
+          })
+          if (logsRes.ok) {
+            const logsData = await safeJson(logsRes)
+            setAuditLogs(logsData?.data?.logs || [])
+          }
+        } catch {}
       } catch (err) {
-        if (err.name !== 'AbortError') {
-          toast.error(err.message || 'Error loading offer details')
-        }
+        if (err.name !== 'AbortError') toast.error(err.message || 'Error loading offer details')
       } finally {
         setLoading(false)
       }
@@ -60,9 +71,14 @@ export default function AdminOfferEditPage() {
   const handleSubmit = async (payload) => {
     try {
       setSaving(true)
-      const token = localStorage.getItem('token')
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      if (!base) {
+        toast.error('NEXT_PUBLIC_BACKEND_URL not set')
+        return
+      }
 
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/category-commissions/${id}`, {
+      const res = await fetch(`${base}/api/admin/category-commissions/${id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -71,12 +87,11 @@ export default function AdminOfferEditPage() {
         body: JSON.stringify(payload)
       })
 
-      const data = await res.json()
+      const data = await safeJson(res)
       if (!res.ok) throw new Error(data?.message || 'Failed to update offer')
 
       toast.success('Offer updated successfully')
       router.push('/admin/offers')
-
     } catch (err) {
       toast.error(err.message || 'Failed to update offer')
     } finally {
@@ -85,22 +100,26 @@ export default function AdminOfferEditPage() {
   }
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this offer? This action cannot be undone.')) {
-      return
-    }
+    if (!confirm('Are you sure you want to delete this offer? This action cannot be undone.')) return
 
     try {
-      const token = localStorage.getItem('token')
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/category-commissions/${id}`, {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      if (!base) {
+        toast.error('NEXT_PUBLIC_BACKEND_URL not set')
+        return
+      }
+
+      const res = await fetch(`${base}/api/admin/category-commissions/${id}`, {
         method: 'DELETE',
         headers: { Authorization: token ? `Bearer ${token}` : '' }
       })
 
-      if (!res.ok) throw new Error('Failed to delete offer')
+      const data = await safeJson(res)
+      if (!res.ok) throw new Error(data?.message || 'Failed to delete offer')
 
       toast.success('Offer deleted successfully')
       router.push('/admin/offers')
-
     } catch (err) {
       toast.error(err.message || 'Failed to delete offer')
     }
@@ -132,7 +151,7 @@ export default function AdminOfferEditPage() {
         <div className="text-center px-4">
           <Tag className="w-12 h-12 text-gray-400 mx-auto mb-3" />
           <h2 className="text-lg sm:text-xl font-medium text-gray-900 mb-2">Offer Not Found</h2>
-          <p className="text-sm sm:text-base text-gray-600 mb-4">The offer you're looking for doesn't exist or has been removed.</p>
+          <p className="text-sm sm:text-base text-gray-600 mb-4">The offer doesn't exist or has been removed.</p>
           <button
             onClick={() => router.push('/admin/offers')}
             className="px-4 sm:px-6 py-2 sm:py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition-colors inline-flex items-center gap-2"
@@ -148,7 +167,6 @@ export default function AdminOfferEditPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-6">
-        {/* Header */}
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <button
@@ -177,9 +195,7 @@ export default function AdminOfferEditPage() {
 
             <div className="text-right">
               <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                item.isActive
-                  ? 'bg-green-100 text-green-600'
-                  : 'bg-gray-100 text-gray-600'
+                item.isActive ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'
               }`}>
                 {item.isActive ? 'Active' : 'Inactive'}
               </div>
@@ -188,26 +204,16 @@ export default function AdminOfferEditPage() {
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
-          {/* Left Column - Form */}
           <div className="lg:col-span-2">
-            <OfferForm
-              initial={item}
-              onSubmit={handleSubmit}
-              submitting={saving}
-            />
+            <OfferForm initial={item} onSubmit={handleSubmit} submitting={saving} />
           </div>
 
-          {/* Right Column - Info & Activity */}
           <div className="space-y-6">
-            {/* Offer Details */}
             <div className="bg-white border border-gray-200 rounded-xl p-5 sm:p-6">
               <h3 className="font-bold text-gray-900 mb-4">Offer Details</h3>
-
               <div className="space-y-3">
                 <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    <Tag className="w-4 h-4 text-gray-600" />
-                  </div>
+                  <Tag className="w-4 h-4 text-gray-600" />
                   <div className="min-w-0">
                     <div className="text-xs text-gray-500">Category Key</div>
                     <div className="text-sm font-medium text-gray-900 break-all">{item.categoryKey}</div>
@@ -215,9 +221,7 @@ export default function AdminOfferEditPage() {
                 </div>
 
                 <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    <Store className="w-4 h-4 text-gray-600" />
-                  </div>
+                  <Store className="w-4 h-4 text-gray-600" />
                   <div className="min-w-0">
                     <div className="text-xs text-gray-500">Store</div>
                     <div className="text-sm font-medium text-gray-900 break-all">{item.store?.name || 'N/A'}</div>
@@ -225,9 +229,7 @@ export default function AdminOfferEditPage() {
                 </div>
 
                 <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    <Clock className="w-4 h-4 text-gray-600" />
-                  </div>
+                  <Clock className="w-4 h-4 text-gray-600" />
                   <div className="min-w-0">
                     <div className="text-xs text-gray-500">Last Updated</div>
                     <div className="text-sm font-medium text-gray-900">
@@ -237,9 +239,7 @@ export default function AdminOfferEditPage() {
                 </div>
 
                 <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    <User className="w-4 h-4 text-gray-600" />
-                  </div>
+                  <User className="w-4 h-4 text-gray-600" />
                   <div className="min-w-0">
                     <div className="text-xs text-gray-500">Created By</div>
                     <div className="text-sm font-medium text-gray-900 break-all">
@@ -250,10 +250,8 @@ export default function AdminOfferEditPage() {
               </div>
             </div>
 
-            {/* Recent Activity */}
             <div className="bg-white border border-gray-200 rounded-xl p-5 sm:p-6">
               <h3 className="font-bold text-gray-900 mb-4">Recent Activity</h3>
-
               {auditLogs.length === 0 ? (
                 <div className="text-center py-4">
                   <div className="text-sm text-gray-500">No activity logged</div>
@@ -275,44 +273,11 @@ export default function AdminOfferEditPage() {
                   ))}
                 </div>
               )}
-
-              {auditLogs.length > 3 && (
-                <button className="w-full mt-3 text-sm text-gray-600 hover:text-gray-900">
-                  View All Activity
-                </button>
-              )}
             </div>
 
-            {/* Quick Actions */}
             <div className="bg-white border border-gray-200 rounded-xl p-5 sm:p-6">
               <h3 className="font-bold text-gray-900 mb-4">Quick Actions</h3>
-
               <div className="space-y-2">
-                <button
-                  onClick={() => router.push(`/admin/stores/${item.store?._id}`)}
-                  className="w-full text-left p-3 hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-3"
-                >
-                  <Store className="w-4 h-4 text-gray-600" />
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">View Store</div>
-                    <div className="text-xs text-gray-500">See store details</div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(item._id)
-                    toast.success('Offer ID copied')
-                  }}
-                  className="w-full text-left p-3 hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-3"
-                >
-                  <Tag className="w-4 h-4 text-gray-600" />
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">Copy Offer ID</div>
-                    <div className="text-xs text-gray-500">{String(item._id || '').substring(0, 12)}...</div>
-                  </div>
-                </button>
-
                 <button
                   onClick={() => router.push('/admin/offers')}
                   className="w-full text-left p-3 hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-3"

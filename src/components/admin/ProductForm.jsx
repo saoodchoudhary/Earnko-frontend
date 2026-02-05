@@ -1,16 +1,39 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import {
   Plus, Trash2, Link as LinkIcon, CheckCircle, AlertCircle,
   Search, Shield, Globe, Tag, DollarSign, Image as ImageIcon,
-  Calendar, RefreshCw, ExternalLink
+  Calendar, RefreshCw, ExternalLink, Info
 } from 'lucide-react'
+
+function normalizeHost(inputUrl) {
+  try {
+    const u = new URL(inputUrl)
+    return u.hostname.toLowerCase().replace(/^www\./, '')
+  } catch {
+    return ''
+  }
+}
+
+function pickProviderByUrl(url) {
+  const host = normalizeHost(url)
+  if (!host) return 'unknown'
+
+  if (host === 'flipkart.com' || host.endsWith('.flipkart.com')) return 'extrape'
+  if (host === 'myntra.com' || host.endsWith('.myntra.com') || host === 'myntr.it') return 'trackier'
+  if (host === 'ajio.com' || host.endsWith('.ajio.com')) return 'trackier'
+  if (host === 'tirabeauty.com' || host.endsWith('.tirabeauty.com')) return 'trackier'
+
+  return 'cuelinks'
+}
 
 export default function ProductForm({ initial, onSubmit, submitting }) {
   const [stores, setStores] = useState([])
   const [loadingStores, setLoadingStores] = useState(true)
+
+  // Cuelinks-only states
   const [campaigns, setCampaigns] = useState([])
   const [campaignLoading, setCampaignLoading] = useState(false)
   const [validation, setValidation] = useState({
@@ -41,6 +64,9 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
     cuelinksCountryId: initial?.cuelinksCountryId || '',
   })
 
+  const provider = useMemo(() => pickProviderByUrl(form.deeplink?.trim() || ''), [form.deeplink])
+  const showCuelinksSection = provider === 'cuelinks'
+
   const safeJson = async (res) => {
     const ct = res.headers.get('content-type') || ''
     if (ct.includes('application/json')) {
@@ -65,22 +91,12 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
         const res = await fetch(`${base}/api/stores`, { signal: controller.signal })
         const data = await safeJson(res)
         if (!ignore) {
-          if (res.ok) {
-            setStores(data?.data?.stores || [])
-          } else {
-            const msg = data?.message || `Failed to load stores (HTTP ${res.status})`
-            if ((data?.message || '').startsWith('<!DOCTYPE') || (data?.message || '').includes('<html')) {
-              toast.error('Stores API returned HTML. Check NEXT_PUBLIC_BACKEND_URL/backend.')
-            } else {
-              toast.error(msg)
-            }
-            setStores([])
-          }
+          if (res.ok) setStores(data?.data?.stores || [])
+          else setStores([])
         }
       } catch (err) {
         if (err?.name !== 'AbortError' && !ignore) {
           toast.error('Error loading stores')
-          console.error('Error loading stores:', err)
         }
       } finally {
         if (!ignore) setLoadingStores(false)
@@ -93,14 +109,28 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
     }
   }, [])
 
+  // Campaign lookup only for cuelinks-provider URLs
   useEffect(() => {
     const controller = new AbortController()
     let ignore = false
+
     async function lookupCampaigns() {
+      // Reset cuelinks-related UI when not cuelinks
+      if (!showCuelinksSection) {
+        if (!ignore) {
+          setCampaigns([])
+          setCampaignLoading(false)
+          setValidation(v => ({ ...v, suggestions: Array.isArray(v.suggestions) ? v.suggestions : [] }))
+        }
+        return
+      }
+
       const url = form.deeplink.trim()
       if (!url) { if (!ignore) setCampaigns([]); return }
+
       let host = ''
       try { host = new URL(url).hostname.replace(/^www\./, '') } catch { if (!ignore) setCampaigns([]); return }
+
       try {
         setCampaignLoading(true)
         const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
@@ -120,30 +150,24 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
           if (res.ok) {
             setCampaigns(data?.data?.campaigns || data?.data?.data || [])
           } else {
-            const msg = data?.message || `Failed campaigns load (HTTP ${res.status})`
-            if ((data?.message || '').startsWith('<!DOCTYPE') || (data?.message || '').includes('<html')) {
-              toast.error('Campaigns API returned HTML. Check NEXT_PUBLIC_BACKEND_URL/backend.')
-            } else {
-              toast.error(msg)
-            }
             setCampaigns([])
           }
         }
       } catch (err) {
         if (err?.name !== 'AbortError' && !ignore) {
           toast.error('Error loading campaigns')
-          console.error('Campaign lookup error:', err)
         }
       } finally {
         if (!ignore) setCampaignLoading(false)
       }
     }
+
     lookupCampaigns()
     return () => {
       ignore = true
       controller.abort()
     }
-  }, [form.deeplink])
+  }, [form.deeplink, showCuelinksSection])
 
   const change = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
   const changeOverride = (k, v) => setForm(prev => ({
@@ -159,6 +183,8 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
 
     onSubmit({
       ...form,
+      // store ORIGINAL merchant URL only (affiliate link should be generated at click/link-gen time)
+      deeplink: form.deeplink.trim(),
       price: form.price === '' ? 0 : Number(form.price),
       images: Array.isArray(form.images) ? form.images.filter(Boolean) : [],
       commissionOverride: {
@@ -166,6 +192,7 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
         type: form.commissionOverride.type || null,
         maxCap: form.commissionOverride.maxCap === '' ? null : Number(form.commissionOverride.maxCap)
       },
+      // Keep cuelinks fields but they matter only when provider=cuelinks
       cuelinksChannelId: form.cuelinksChannelId || '',
       cuelinksCampaignId: form.cuelinksCampaignId || '',
       cuelinksCountryId: form.cuelinksCountryId || '',
@@ -181,7 +208,11 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
   const removeImage = (idx) => change('images', (Array.isArray(form.images) ? form.images : []).filter((_, i) => i !== idx))
 
   const validateCuelinks = async () => {
-    // Reset while keeping suggestions as an array to avoid undefined
+    if (!showCuelinksSection) {
+      toast.error('Cuelinks validation is not applicable for this URL')
+      return
+    }
+
     setValidation({
       ok: false,
       link: '',
@@ -190,6 +221,7 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
       host: '',
       suggestions: []
     })
+
     try {
       if (!form.deeplink.trim()) return toast.error('Enter product URL to validate')
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
@@ -209,7 +241,9 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
           channel_id: form.cuelinksChannelId || undefined
         })
       })
+
       const data = await safeJson(res)
+
       if (!res.ok) {
         if (res.status === 409 && data?.code === 'campaign_approval_required') {
           setValidation({
@@ -223,17 +257,10 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
           toast.error('Campaign needs approval. See suggestions below.')
           return
         }
-        const msg = data?.message || `Validation failed (HTTP ${res.status})`
-        if ((data?.message || '').startsWith('<!DOCTYPE') || (data?.message || '').includes('<html')) {
-          toast.error('Received HTML from API. Check NEXT_PUBLIC_BACKEND_URL/backend.')
-        } else {
-          toast.error(msg)
-        }
-        // Ensure validation object keeps suggestions array to avoid undefined in UI
-        setValidation(v => ({ ...v, suggestions: Array.isArray(v.suggestions) ? v.suggestions : [] }))
+        toast.error(data?.message || `Validation failed (HTTP ${res.status})`)
         return
       }
-      // Success: include suggestions as an empty array to keep UI safe
+
       setValidation({
         ok: true,
         link: data?.data?.link || '',
@@ -245,10 +272,14 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
       toast.success('Cuelinks validation successful')
     } catch (err) {
       toast.error(err.message || 'Validation failed')
-      // Keep suggestions defined
-      setValidation(v => ({ ...v, suggestions: Array.isArray(v.suggestions) ? v.suggestions : [] }))
     }
   }
+
+  const providerLabel =
+    provider === 'extrape' ? 'ExtraPe (Flipkart)' :
+    provider === 'trackier' ? 'VCommission (Trackier)' :
+    provider === 'cuelinks' ? 'Cuelinks' :
+    'Unknown'
 
   return (
     <div className="">
@@ -364,6 +395,12 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Product URL *
               </label>
+
+              <div className="mb-2 flex items-center gap-2 text-xs sm:text-sm text-gray-600">
+                <Info className="w-4 h-4" />
+                <span>Detected provider: <b className="text-gray-900">{providerLabel}</b></span>
+              </div>
+
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   className="flex-1 px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800 break-all"
@@ -383,6 +420,12 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
                   </a>
                 )}
               </div>
+
+              {!showCuelinksSection && form.deeplink.trim() && (provider === 'extrape' || provider === 'trackier') && (
+                <div className="mt-2 text-xs sm:text-sm text-gray-600">
+                  Cuelinks fields/validation is not required for this URL.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -493,219 +536,209 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
           </div>
         </div>
 
-        {/* Cuelinks Integration Card */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center flex-shrink-0">
-                <LinkIcon className="w-5 h-5 text-white" />
+        {/* Cuelinks Integration Card (CONDITIONAL) */}
+        {showCuelinksSection && (
+          <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-gray-800 flex items-center justify-center flex-shrink-0">
+                  <LinkIcon className="w-5 h-5 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base sm:text-lg font-bold text-gray-900">Cuelinks Integration</h3>
+                  <p className="text-xs sm:text-sm text-gray-600 mt-1">Validate and find campaigns</p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <h3 className="text-base sm:text-lg font-bold text-gray-900">Cuelinks Integration</h3>
-                <p className="text-xs sm:text-sm text-gray-600 mt-1">Connect with Cuelinks for tracking</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={validateCuelinks}
-              className="px-4 sm:px-6 py-2.5 sm:py-3 bg-gray-800 text-white text-sm sm:text-base font-semibold rounded-lg hover:bg-gray-900 transition-colors flex items-center gap-2 self-start sm:self-auto"
-            >
-              <Shield className="w-4 h-4" />
-              Validate with Cuelinks
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Channel ID
-                </label>
-                <input
-                  className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
-                  value={form.cuelinksChannelId}
-                  onChange={(e) => change('cuelinksChannelId', e.target.value)}
-                  placeholder="e.g., 101"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Campaign ID
-                </label>
-                <input
-                  className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
-                  value={form.cuelinksCampaignId}
-                  onChange={(e) => change('cuelinksCampaignId', e.target.value)}
-                  placeholder="Campaign reference"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Country ID
-                </label>
-                <input
-                  className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
-                  value={form.cuelinksCountryId}
-                  onChange={(e) => change('cuelinksCountryId', e.target.value)}
-                  placeholder="Country code"
-                />
-              </div>
+              <button
+                type="button"
+                onClick={validateCuelinks}
+                className="px-4 sm:px-6 py-2.5 sm:py-3 bg-gray-800 text-white text-sm sm:text-base font-semibold rounded-lg hover:bg-gray-900 transition-colors flex items-center gap-2 self-start sm:self-auto"
+              >
+                <Shield className="w-4 h-4" />
+                Validate with Cuelinks
+              </button>
             </div>
 
-            {/* Validation Result */}
-            {validation.message && (
-              <div className={`border rounded-lg p-4 ${
-                validation.ok
-                  ? 'border-green-200 bg-green-50'
-                  : 'border-yellow-200 bg-yellow-50'
-              }`}>
-                <div className="flex items-start gap-3">
-                  <div className={validation.ok ? 'text-green-600' : 'text-yellow-600'}>
-                    {validation.ok ? (
-                      <CheckCircle className="w-5 h-5" />
-                    ) : (
-                      <AlertCircle className="w-5 h-5" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className={`font-medium ${validation.ok ? 'text-green-800' : 'text-yellow-800'}`}>
-                      {validation.message}
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Channel ID
+                  </label>
+                  <input
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                    value={form.cuelinksChannelId}
+                    onChange={(e) => change('cuelinksChannelId', e.target.value)}
+                    placeholder="e.g., 101"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Campaign ID
+                  </label>
+                  <input
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                    value={form.cuelinksCampaignId}
+                    onChange={(e) => change('cuelinksCampaignId', e.target.value)}
+                    placeholder="Campaign reference"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Country ID
+                  </label>
+                  <input
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                    value={form.cuelinksCountryId}
+                    onChange={(e) => change('cuelinksCountryId', e.target.value)}
+                    placeholder="Country code"
+                  />
+                </div>
+              </div>
+
+              {validation.message && (
+                <div className={`border rounded-lg p-4 ${
+                  validation.ok ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'
+                }`}>
+                  <div className="flex items-start gap-3">
+                    <div className={validation.ok ? 'text-green-600' : 'text-yellow-600'}>
+                      {validation.ok ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
                     </div>
-                    {validation.link && (
-                      <div className="text-sm text-gray-700 mt-2 break-all">
-                        {validation.link}
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-medium ${validation.ok ? 'text-green-800' : 'text-yellow-800'}`}>
+                        {validation.message}
                       </div>
-                    )}
-                    {Array.isArray(validation.suggestions) && validation.suggestions.length > 0 && (
-                      <div className="mt-3">
-                        <div className="text-sm font-medium text-yellow-800 mb-2">
-                          Available campaigns for approval:
+                      {validation.link && (
+                        <div className="text-sm text-gray-700 mt-2 break-all">
+                          {validation.link}
                         </div>
-                        <div className="space-y-1">
-                          {validation.suggestions.map((s, i) => (
-                            <div key={i} className="text-sm text-yellow-700 break-words">
-                              • {s}
-                            </div>
-                          ))}
+                      )}
+                      {Array.isArray(validation.suggestions) && validation.suggestions.length > 0 && (
+                        <div className="mt-3">
+                          <div className="text-sm font-medium text-yellow-800 mb-2">
+                            Available campaigns for approval:
+                          </div>
+                          <div className="space-y-1">
+                            {validation.suggestions.map((s, i) => (
+                              <div key={i} className="text-sm text-yellow-700 break-words">
+                                • {s}
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Campaign Suggestions */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div className="text-sm font-bold text-gray-900">
-                  Campaign Suggestions
-                </div>
-                {campaignLoading && (
-                  <RefreshCw className="w-4 h-4 text-gray-500 animate-spin" />
-                )}
-              </div>
-
-              {campaignLoading ? (
-                <div className="space-y-2">
-                  {[...Array(3)].map((_, i) => (
-                    <div key={i} className="h-11 sm:h-12 bg-gray-200 rounded-lg animate-pulse"></div>
-                  ))}
-                </div>
-              ) : campaigns.length === 0 ? (
-                <div className="text-center py-6 border-2 border-dashed border-gray-300 rounded-lg">
-                  <Search className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-600">No matching campaigns found</p>
-                  <p className="text-xs sm:text-sm text-gray-500 mt-1">Enter a valid product URL to see campaigns</p>
-                </div>
-              ) : (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-xs sm:text-sm">
-                      <thead className="bg-gray-100">
-                        <tr>
-                          <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-medium text-gray-700">
-                            Campaign Name
-                          </th>
-                          <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-medium text-gray-700">
-                            Status
-                          </th>
-                          <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-medium text-gray-700">
-                            App Status
-                          </th>
-                          <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-medium text-gray-700">
-                            Country
-                          </th>
-                          <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-medium text-gray-700">
-                            Action
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {campaigns.map((c, i) => (
-                          <tr key={c.id || i} className="hover:bg-white transition-colors">
-                            <td className="px-3 sm:px-4 py-2.5 sm:py-3">
-                              <div className="font-medium text-gray-900 break-words">
-                                {c.name || c.campaign_name || '-'}
-                              </div>
-                            </td>
-                            <td className="px-3 sm:px-4 py-2.5 sm:py-3">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                c.status === 'approved_for_selected' ? 'bg-green-100 text-green-800' :
-                                c.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-gray-100 text-gray-800'
-                              }`}>
-                                {c.status || '-'}
-                              </span>
-                            </td>
-                            <td className="px-3 sm:px-4 py-2.5 sm:py-3">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                c.application_status === 'approved' ? 'bg-green-100 text-green-800' :
-                                c.application_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                                c.application_status === 'rejected' ? 'bg-red-100 text-red-800' :
-                                'bg-gray-100 text-gray-800'
-                              }`}>
-                                {c.application_status || 'not_applied'}
-                              </span>
-                            </td>
-                            <td className="px-3 sm:px-4 py-2.5 sm:py-3">
-                              <div className="flex items-center gap-1">
-                                <Globe className="w-3 h-3 text-gray-500" />
-                                <span className="break-words">
-                                  {Array.isArray(c.countries)
-                                    ? c.countries.join(', ')
-                                    : (c.country || '-')}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-3 sm:px-4 py-2.5 sm:py-3">
-                              <button
-                                type="button"
-                                onClick={() => change('cuelinksCampaignId', String(c.id || c.campaign_id || ''))}
-                                className="px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900 transition-colors"
-                              >
-                                Select
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
 
-              <div className="mt-4 text-xs sm:text-sm text-gray-500">
-                <div className="flex items-start gap-2">
-                  <Calendar className="w-3 h-3 mt-0.5" />
-                  <span>Campaigns with status "approved_for_selected" or "approved_for_selected_and_hidden" require application. Application status can be "not_applied", "pending", "approved", or "rejected".</span>
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="text-sm font-bold text-gray-900">
+                    Campaign Suggestions
+                  </div>
+                  {campaignLoading && <RefreshCw className="w-4 h-4 text-gray-500 animate-spin" />}
+                </div>
+
+                {campaignLoading ? (
+                  <div className="space-y-2">
+                    {[...Array(3)].map((_, i) => (
+                      <div key={i} className="h-11 sm:h-12 bg-gray-200 rounded-lg animate-pulse"></div>
+                    ))}
+                  </div>
+                ) : campaigns.length === 0 ? (
+                  <div className="text-center py-6 border-2 border-dashed border-gray-300 rounded-lg">
+                    <Search className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-gray-600">No matching campaigns found</p>
+                    <p className="text-xs sm:text-sm text-gray-500 mt-1">Enter a valid product URL to see campaigns</p>
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-xs sm:text-sm">
+                        <thead className="bg-gray-100">
+                          <tr>
+                            <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-medium text-gray-700">
+                              Campaign Name
+                            </th>
+                            <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-medium text-gray-700">
+                              Status
+                            </th>
+                            <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-medium text-gray-700">
+                              App Status
+                            </th>
+                            <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-medium text-gray-700">
+                              Country
+                            </th>
+                            <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-medium text-gray-700">
+                              Action
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {campaigns.map((c, i) => (
+                            <tr key={c.id || i} className="hover:bg-white transition-colors">
+                              <td className="px-3 sm:px-4 py-2.5 sm:py-3">
+                                <div className="font-medium text-gray-900 break-words">
+                                  {c.name || c.campaign_name || '-'}
+                                </div>
+                              </td>
+                              <td className="px-3 sm:px-4 py-2.5 sm:py-3">
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                  c.status === 'approved_for_selected' ? 'bg-green-100 text-green-800' :
+                                  c.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {c.status || '-'}
+                                </span>
+                              </td>
+                              <td className="px-3 sm:px-4 py-2.5 sm:py-3">
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                  c.application_status === 'approved' ? 'bg-green-100 text-green-800' :
+                                  c.application_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                  c.application_status === 'rejected' ? 'bg-red-100 text-red-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {c.application_status || 'not_applied'}
+                                </span>
+                              </td>
+                              <td className="px-3 sm:px-4 py-2.5 sm:py-3">
+                                <div className="flex items-center gap-1">
+                                  <Globe className="w-3 h-3 text-gray-500" />
+                                  <span className="break-words">
+                                    {Array.isArray(c.countries) ? c.countries.join(', ') : (c.country || '-')}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-3 sm:px-4 py-2.5 sm:py-3">
+                                <button
+                                  type="button"
+                                  onClick={() => change('cuelinksCampaignId', String(c.id || c.campaign_id || ''))}
+                                  className="px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded hover:bg-gray-900 transition-colors"
+                                >
+                                  Select
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-4 text-xs sm:text-sm text-gray-500">
+                  <div className="flex items-start gap-2">
+                    <Calendar className="w-3 h-3 mt-0.5" />
+                    <span>Campaign list is only for Cuelinks-supported domains.</span>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Submit Button */}
         <div className="flex justify-end">

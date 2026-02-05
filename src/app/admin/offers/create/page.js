@@ -11,11 +11,26 @@ export default function AdminOfferCreatePage() {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      try { return await res.json() } catch { return null }
+    }
+    const txt = await res.text().catch(() => '')
+    return { success: false, message: txt }
+  }
+
   const handleSubmit = async (payload) => {
     try {
       setSaving(true)
-      const token = localStorage.getItem('token')
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || ''}/api/admin/category-commissions`, {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+      const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
+      if (!base) {
+        toast.error('NEXT_PUBLIC_BACKEND_URL not set')
+        return
+      }
+
+      const res = await fetch(`${base}/api/admin/category-commissions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -23,8 +38,9 @@ export default function AdminOfferCreatePage() {
         },
         body: JSON.stringify(payload)
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.message || 'Failed to create offer')
+
+      const data = await safeJson(res)
+      if (!res.ok) throw new Error(data?.message || `Failed to create offer (HTTP ${res.status})`)
 
       toast.success('Offer created successfully!', { icon: '🎯', duration: 3000 })
       router.push('/admin/offers')
@@ -37,7 +53,6 @@ export default function AdminOfferCreatePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header Section */}
       <div className="bg-white border-b border-gray-200">
         <div className="container mx-auto px-4 py-4 sm:py-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -64,23 +79,18 @@ export default function AdminOfferCreatePage() {
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="container mx-auto px-4 py-6">
         <div className="grid lg:grid-cols-3 gap-6">
-          {/* Left Column - Form */}
           <div className="lg:col-span-2">
             <OfferForm onSubmit={handleSubmit} submitting={saving} />
           </div>
 
-          {/* Right Column - Guidelines (stack below on mobile) */}
           <div className="space-y-6">
-            {/* Creation Guidelines */}
             <div className="bg-white border border-gray-200 rounded-xl p-5 sm:p-6">
               <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <AlertCircle className="w-5 h-5 text-amber-600" />
                 Creation Guidelines
               </h3>
-
               <div className="space-y-3 text-xs sm:text-sm">
                 <div className="flex items-start gap-2">
                   <div className="w-2 h-2 bg-gray-600 rounded-full mt-2"></div>
@@ -89,105 +99,50 @@ export default function AdminOfferCreatePage() {
                     <div className="text-gray-600">Select an existing store or enter Store ID manually</div>
                   </div>
                 </div>
-
                 <div className="flex items-start gap-2">
                   <div className="w-2 h-2 bg-gray-600 rounded-full mt-2"></div>
                   <div>
                     <div className="font-medium text-gray-900">Category Key</div>
-                    <div className="text-gray-600">Use descriptive keys like "electronics", "fashion", "home"</div>
+                    <div className="text-gray-600">Use keys like "electronics", "fashion", "home"</div>
                   </div>
                 </div>
-
                 <div className="flex items-start gap-2">
                   <div className="w-2 h-2 bg-gray-600 rounded-full mt-2"></div>
                   <div>
                     <div className="font-medium text-gray-900">Commission Rate</div>
-                    <div className="text-gray-600">Enter rate in % or fixed ₹ amount based on type</div>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-2">
-                  <div className="w-2 h-2 bg-gray-600 rounded-full mt-2"></div>
-                  <div>
-                    <div className="font-medium text-gray-900">Max Cap</div>
-                    <div className="text-gray-600">Optional maximum commission per transaction</div>
+                    <div className="text-gray-600">Enter % or fixed ₹ based on type</div>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Best Practices */}
             <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-5 sm:p-6">
               <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <CheckCircle className="w-5 h-5 text-green-600" />
                 Best Practices
               </h3>
-
               <div className="space-y-3 text-xs sm:text-sm">
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                  <div className="text-gray-700">Use clear, consistent category keys across stores</div>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                  <div className="text-gray-700">Set competitive commission rates based on industry standards</div>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                  <div className="text-gray-700">Add descriptive labels for better user understanding</div>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                  <div className="text-gray-700">Use metadata for additional tracking and segmentation</div>
+                  <div className="text-gray-700">Use consistent category keys across stores</div>
                 </div>
               </div>
             </div>
 
-            {/* Quick Actions */}
             <div className="bg-white border border-gray-200 rounded-xl p-5 sm:p-6">
               <h3 className="font-bold text-gray-900 mb-4">Quick Actions</h3>
-
               <div className="space-y-3">
-                <Link
-                  href="/admin/stores"
-                  className="w-full py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 text-sm"
-                >
+                <Link href="/admin/stores" className="w-full py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 text-sm">
                   Manage Stores
                 </Link>
-                <Link
-                  href="/admin/offers"
-                  className="w-full py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 text-sm"
-                >
+                <Link href="/admin/offers" className="w-full py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 text-sm">
                   <ArrowLeft className="w-4 h-4" />
                   Back to Offers
                 </Link>
               </div>
             </div>
-
-            {/* Creation Status */}
-            <div className="bg-white border border-gray-200 rounded-xl p-5 sm:p-6">
-              <h3 className="font-bold text-gray-900 mb-4">Creation Status</h3>
-
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">Form Status</span>
-                  <span className={`font-medium ${saving ? 'text-amber-600' : 'text-green-600'}`}>
-                    {saving ? 'Processing...' : 'Ready'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">Validation</span>
-                  <span className="font-medium text-green-600">Required</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">API Status</span>
-                  <span className={`font-medium ${saving ? 'text-blue-600' : 'text-gray-600'}`}>
-                    {saving ? 'Calling API...' : 'Idle'}
-                  </span>
-                </div>
-              </div>
-            </div>
           </div>
+
         </div>
       </div>
     </div>
