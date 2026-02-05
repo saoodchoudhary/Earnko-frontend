@@ -23,18 +23,15 @@ function StoresPageInner() {
   const [stores, setStores] = useState([]);
   const [storesLoading, setStoresLoading] = useState(true);
 
-  // Search stores
   const [storeQuery, setStoreQuery] = useState('');
   const [queryDebounced, setQueryDebounced] = useState(storeQuery);
 
-  // Share modal state
-  const [shareFor, setShareFor] = useState(null); // selected store object
+  const [shareFor, setShareFor] = useState(null);
   const [shareUrl, setShareUrl] = useState('');
   const [shareOpen, setShareOpen] = useState(false);
-  const [sharingStoreId, setSharingStoreId] = useState(null); // show loading on specific button
+  const [sharingStoreId, setSharingStoreId] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  // Debounce search input for smoother UX
   useEffect(() => {
     const t = setTimeout(() => setQueryDebounced(storeQuery), 200);
     return () => clearTimeout(t);
@@ -55,7 +52,6 @@ function StoresPageInner() {
     return Array.isArray(list) ? list : [];
   };
 
-  // Load stores from backend (public)
   useEffect(() => {
     const controller = new AbortController();
     async function loadStores() {
@@ -65,8 +61,7 @@ function StoresPageInner() {
         const res = await fetch(`${base}/api/stores`, { signal: controller.signal });
         const js = await safeJson(res);
         if (!res.ok) throw new Error(js?.message || `Failed to load stores (HTTP ${res.status})`);
-        const list = normalizeStores(js);
-        setStores(list);
+        setStores(normalizeStores(js));
       } catch (err) {
         console.error('Load stores error:', err);
         setStores([]);
@@ -78,7 +73,6 @@ function StoresPageInner() {
     return () => controller.abort();
   }, [base]);
 
-  // Filter stores by search query
   const visibleStores = useMemo(() => {
     const q = queryDebounced.trim().toLowerCase();
     const list = Array.isArray(stores) ? stores : [];
@@ -86,16 +80,14 @@ function StoresPageInner() {
     return list.filter(s => String(s.name || '').toLowerCase().includes(q));
   }, [stores, queryDebounced]);
 
-  // Only logged-in users can generate/share affiliate links
   const requireLoginToGenerate = () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) router.push('/login?next=/stores');
     return !!token;
   };
 
-  // Generate provider (Cuelinks) affiliate link and use it directly (remove backend share link)
+  // FIX: use universal backend endpoint (extrape/trackier/cuelinks)
   const shareStoreLink = async (store) => {
-    // Guard login
     if (!requireLoginToGenerate()) return;
 
     const url = store?.baseUrl;
@@ -103,30 +95,39 @@ function StoresPageInner() {
       toast.error('This store does not have a shareable base URL yet');
       return;
     }
+    if (!base) {
+      toast.error('NEXT_PUBLIC_BACKEND_URL not set');
+      return;
+    }
 
     try {
       setSharingStoreId(store._id);
       setCopied(false);
+
       const token = localStorage.getItem('token');
-      const res = await fetch(`${base}/api/affiliate/cuelinks/deeplink`, {
+
+      const res = await fetch(`${base}/api/affiliate/link-from-url`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: token ? `Bearer ${token}` : ''
         },
-        body: JSON.stringify({ url })
+        body: JSON.stringify({
+          url,
+          storeId: store._id // optional, useful for stats
+        })
       });
+
       const js = await safeJson(res);
+
       if (!res.ok) {
-        // Specific handling when campaign approval is required
         if (res.status === 409 && js?.code === 'campaign_approval_required') {
-          toast.error('Campaign requires approval in Cuelinks for this store');
+          toast.error('Cuelinks campaign approval required for this store');
           return;
         }
         throw new Error(js?.message || 'Failed to generate link');
       }
 
-      // Use provider's affiliate link directly
       const providerLink = js?.data?.link;
       if (!providerLink) throw new Error('No provider link returned');
 
@@ -140,7 +141,6 @@ function StoresPageInner() {
     }
   };
 
-  // Helper: build public logo URL from backend if relative path like "/uploads/..."
   const getLogoUrl = (logo) => {
     if (!logo || typeof logo !== 'string') return '';
     if (logo.startsWith('http://') || logo.startsWith('https://')) return logo;
@@ -168,26 +168,13 @@ function StoresPageInner() {
   const openShareWindow = (url) => {
     try {
       window.open(url, '_blank', 'noopener,noreferrer,width=900,height=650');
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 
-  const messageText = shareFor?.name
-    ? `Check out ${shareFor.name} deals`
-    : `Check out this store`;
-
-  const encodedUrl = encodeURIComponent(shareUrl || '');
-  const encodedText = encodeURIComponent(messageText);
-
-  const whatsappUrl = `https://wa.me/?text=${encodedText}%20${encodedUrl}`;
-  const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`;
-  const twitterUrl = `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`;
-  const telegramUrl = `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`;
+  const messageText = shareFor?.name ? `Check out ${shareFor.name} deals` : `Check out this store`;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
-      {/* Header */}
       <section className="bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 text-white">
         <div className="container mx-auto px-4 py-8">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
@@ -206,7 +193,6 @@ function StoresPageInner() {
             </div>
           </div>
 
-          {/* Top toolbar: Search stores */}
           <div className="mt-6">
             <div className="relative">
               <Search className="absolute top-6 left-3 -translate-y-1/2 w-4 h-4 text-white/70" />
@@ -225,9 +211,7 @@ function StoresPageInner() {
         </div>
       </section>
 
-      {/* Main Content */}
       <div className="container mx-auto px-4 py-6">
-        {/* Stores Grid only */}
         <div className="bg-white border border-gray-200 rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-gray-900">Browse Stores</h2>
@@ -263,13 +247,9 @@ function StoresPageInner() {
         </div>
       </div>
 
-      {/* Share Modal */}
       {shareOpen && (
         <div className="fixed inset-0 z-[60]">
-          <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            onClick={closeShare}
-          />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeShare} />
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[92vw] max-w-md bg-white rounded-2xl shadow-2xl border border-gray-200">
             <div className="p-4 border-b border-gray-100 flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0">
@@ -291,7 +271,6 @@ function StoresPageInner() {
             </div>
 
             <div className="p-4 space-y-4">
-              {/* Share link preview */}
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                 <div className="text-xs text-gray-500 mb-1">Affiliate link</div>
                 <div className="text-sm text-gray-900 break-all">{shareUrl}</div>
@@ -306,26 +285,17 @@ function StoresPageInner() {
                 </div>
               </div>
 
-              {/* Share actions */}
               <div className="grid grid-cols-2 gap-3">
-                <ShareTile
-                  label="WhatsApp"
-                  color="bg-green-50 text-green-700 border-green-200"
+                <ShareTile label="WhatsApp" color="bg-green-50 text-green-700 border-green-200"
                   onClick={() => openShareWindow(`https://wa.me/?text=${encodeURIComponent(`${messageText} ${shareUrl}`)}`)}
                 />
-                <ShareTile
-                  label="Facebook"
-                  color="bg-blue-50 text-blue-700 border-blue-200"
+                <ShareTile label="Facebook" color="bg-blue-50 text-blue-700 border-blue-200"
                   onClick={() => openShareWindow(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`)}
                 />
-                <ShareTile
-                  label="Telegram"
-                  color="bg-cyan-50 text-cyan-700 border-cyan-200"
+                <ShareTile label="Telegram" color="bg-cyan-50 text-cyan-700 border-cyan-200"
                   onClick={() => openShareWindow(`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(messageText)}`)}
                 />
-                <ShareTile
-                  label="Twitter"
-                  color="bg-sky-50 text-sky-700 border-sky-200"
+                <ShareTile label="Twitter" color="bg-sky-50 text-sky-700 border-sky-200"
                   onClick={() => openShareWindow(`https://twitter.com/intent/tweet?text=${encodeURIComponent(messageText)}&url=${encodeURIComponent(shareUrl)}`)}
                 />
               </div>
@@ -399,11 +369,9 @@ function StoreItem({ store, onShare, getLogoUrl, sharing }) {
           onClick={onShare}
           disabled={sharing}
           className={`flex-1 py-2 text-white font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
-            sharing
-              ? 'bg-blue-400 cursor-wait'
-              : 'bg-gradient-to-r from-blue-600 to-cyan-500 hover:shadow-lg'
+            sharing ? 'bg-blue-400 cursor-wait' : 'bg-gradient-to-r from-blue-600 to-cyan-500 hover:shadow-lg'
           }`}
-          title="Generate direct affiliate link for this store"
+          title="Generate affiliate link for this store"
         >
           {sharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
           {sharing ? 'Generating...' : 'Share Store'}
