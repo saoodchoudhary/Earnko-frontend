@@ -1,4 +1,3 @@
-// components/Affiliate/LinkMaker.tsx
 'use client'
 import { useState } from 'react'
 import toast from 'react-hot-toast'
@@ -13,56 +12,56 @@ export default function LinkMaker() {
   const [error, setError] = useState(null)
   const [copied, setCopied] = useState(false)
 
-  function normalizeUrl(url) {
-    try {
-      if (!/^https?:\/\//i.test(url)) return 'https://' + url
-      return url
-    } catch (e) {
-      return url
-    }
+  function normalizeUrl(raw) {
+    let url = String(raw || '').trim()
+    url = url.replace(/&amp;/gi, '&')
+    url = url.replace(/[\r\n\t]+/g, '')
+    url = url.replace(/\s+/g, '') // remove spaces inside URL (WhatsApp wrap issue)
+    if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url
+    return url
   }
 
   function validateUrl(url) {
-    try { new URL(url); return true } catch (e) { return false }
+    try { new URL(url); return true } catch { return false }
   }
 
   async function handleMakeLink(e) {
     e.preventDefault()
     setError(null)
     setResult(null)
-    const normalized = normalizeUrl(inputUrl.trim())
-    
+
+    const normalized = normalizeUrl(inputUrl)
+
     if (!normalized) {
       setError('Please enter a URL')
       return
     }
-    
+
     if (!validateUrl(normalized)) {
       setError('Please enter a valid URL (include https://)')
       return
     }
 
     setLoading(true)
-    
+
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
       const res = await fetch(`${API_URL}/api/affiliate/link-from-url`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          ...(token ? { Authorization: `Bearer ${token}` } : {}) 
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ url: normalized })
       })
-      
-      const data = await res.json()
-      
+
+      const data = await res.json().catch(() => null)
+
       if (!res.ok) {
-        setError(data.message || 'Failed to create link')
-        setLoading(false)
+        setError(data?.message || 'Failed to create link')
         return
       }
-      
+
       setResult(data.data || data)
       toast.success('Affiliate link created!')
       setInputUrl('')
@@ -88,7 +87,6 @@ export default function LinkMaker() {
   return (
     <div>
       <form onSubmit={handleMakeLink} className="space-y-4">
-        {/* URL Input */}
         <div className="relative">
           <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
             <Globe className="w-5 h-5 text-gray-400" />
@@ -102,20 +100,17 @@ export default function LinkMaker() {
           />
         </div>
 
-        {/* Helper Text */}
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <Sparkles className="w-4 h-4" />
           <span>Supports 500+ partner stores with competitive commission rates</span>
         </div>
 
-        {/* Error Message */}
         {error && (
           <div className="p-3 bg-red-50 border border-red-100 rounded-lg">
             <p className="text-sm text-red-700">{error}</p>
           </div>
         )}
 
-        {/* Generate Button */}
         <button
           type="submit"
           disabled={loading || !inputUrl.trim()}
@@ -135,7 +130,6 @@ export default function LinkMaker() {
         </button>
       </form>
 
-      {/* Result Display */}
       {result && (
         <div className="mt-6 animate-in fade-in duration-300">
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100 p-6">
@@ -151,7 +145,6 @@ export default function LinkMaker() {
               </span>
             </div>
 
-            {/* Generated Link */}
             <div className="mb-4">
               <div className="text-sm text-gray-600 mb-2">Copy this link and share anywhere:</div>
               <div className="flex gap-2">
@@ -168,7 +161,6 @@ export default function LinkMaker() {
               </div>
             </div>
 
-            {/* Actions */}
             <div className="flex flex-wrap gap-3">
               <a
                 href={result.link}
@@ -179,16 +171,6 @@ export default function LinkMaker() {
                 <ExternalLink className="w-4 h-4" />
                 <span className="text-sm font-medium">Open Link</span>
               </a>
-              
-              <button className="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
-                <span className="text-sm font-medium">Share on Social</span>
-              </button>
-              
-              {result.productId && (
-                <div className="text-xs text-gray-500 mt-2">
-                  Product ID: <span className="font-medium text-gray-900">{result.productId}</span>
-                </div>
-              )}
             </div>
           </div>
         </div>
