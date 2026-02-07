@@ -32,6 +32,12 @@ function StoresPageInner() {
   const [sharingStoreId, setSharingStoreId] = useState(null);
   const [copied, setCopied] = useState(false);
 
+  // NEW: Profit rates modal state
+  const [ratesOpen, setRatesOpen] = useState(false);
+  const [ratesFor, setRatesFor] = useState(null);
+  const [ratesLoading, setRatesLoading] = useState(false);
+  const [profitRates, setProfitRates] = useState(null); // { storeRules, globalRules }
+
   useEffect(() => {
     const t = setTimeout(() => setQueryDebounced(storeQuery), 200);
     return () => clearTimeout(t);
@@ -141,6 +147,38 @@ function StoresPageInner() {
     }
   };
 
+  // NEW: open profit rates modal + fetch
+  const viewProfitRates = async (store) => {
+    try {
+      if (!base) {
+        toast.error('NEXT_PUBLIC_BACKEND_URL not set');
+        return;
+      }
+      setRatesFor(store);
+      setProfitRates(null);
+      setRatesOpen(true);
+      setRatesLoading(true);
+
+      const res = await fetch(`${base}/api/stores/${store._id}/profit-rates`);
+      const js = await safeJson(res);
+      if (!res.ok) throw new Error(js?.message || `Failed to load profit rates (HTTP ${res.status})`);
+
+      setProfitRates(js?.data || null);
+    } catch (err) {
+      toast.error(err?.message || 'Failed to load profit rates');
+      setProfitRates(null);
+    } finally {
+      setRatesLoading(false);
+    }
+  };
+
+  const closeProfitRates = () => {
+    setRatesOpen(false);
+    setRatesFor(null);
+    setProfitRates(null);
+    setRatesLoading(false);
+  };
+
   const getLogoUrl = (logo) => {
     if (!logo || typeof logo !== 'string') return '';
     if (logo.startsWith('http://') || logo.startsWith('https://')) return logo;
@@ -238,6 +276,7 @@ function StoresPageInner() {
                   key={store._id}
                   store={store}
                   onShare={() => shareStoreLink(store)}
+                  onViewProfit={() => viewProfitRates(store)}
                   getLogoUrl={getLogoUrl}
                   sharing={sharingStoreId === store._id}
                 />
@@ -247,6 +286,46 @@ function StoresPageInner() {
         </div>
       </div>
 
+      {/* Profit rates modal */}
+      {ratesOpen && (
+        <div className="fixed inset-0 z-[70]">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeProfitRates} />
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[94vw] max-w-2xl bg-white rounded-2xl shadow-2xl border border-gray-200">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <div className="min-w-0">
+                <div className="font-semibold text-gray-900 truncate">
+                  View Profit Rates — {ratesFor?.name || 'Store'}
+                </div>
+                <div className="text-xs text-gray-500 truncate">
+                  Category-wise rates
+                </div>
+              </div>
+              <button className="p-2 rounded-lg hover:bg-gray-100" onClick={closeProfitRates}>
+                <X className="w-4 h-4 text-gray-600" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              {ratesLoading ? (
+                <div className="h-40 bg-gray-100 rounded-xl animate-pulse" />
+              ) : !profitRates ? (
+                <div className="text-sm text-gray-600">No rates found.</div>
+              ) : (
+                <div className="space-y-6">
+                  <RatesTable title="Store-specific Rates" rows={profitRates.storeRules || []} />
+                  {/* <RatesTable title="Global Default Rates" rows={profitRates.globalRules || []} /> */}
+                </div>
+              )}
+
+              <div className="mt-5 text-[11px] text-gray-500">
+                Note: These are indicative profit/commission rates by category. Final payout depends on tracking and network validation.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share modal (existing) */}
       {shareOpen && (
         <div className="fixed inset-0 z-[60]">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeShare} />
@@ -311,6 +390,36 @@ function StoresPageInner() {
   );
 }
 
+function RatesTable({ title, rows }) {
+  return (
+    <div>
+      <div className="font-semibold text-gray-900 mb-2">{title}</div>
+      {(!rows || rows.length === 0) ? (
+        <div className="text-sm text-gray-600">No rates.</div>
+      ) : (
+        <div className="border border-gray-200 rounded-xl overflow-hidden">
+          <div className="grid grid-cols-12 bg-gray-50 text-xs font-semibold text-gray-600 px-3 py-2">
+            <div className="col-span-6">Category</div>
+            <div className="col-span-3">Rate</div>
+            <div className="col-span-3">Max Cap</div>
+          </div>
+          {rows.map((r) => (
+            <div key={r._id} className="grid grid-cols-12 px-3 py-2 text-sm border-t border-gray-100">
+              <div className="col-span-6 text-gray-900">{ r.categoryKey}</div>
+              <div className="col-span-3 text-gray-700">
+                {Number(r.commissionRate || 0)}{r.commissionType === 'percentage' ? '%' : ''}
+              </div>
+              <div className="col-span-3 text-gray-700">
+                {r.maxCap != null ? `₹${Number(r.maxCap).toLocaleString()}` : '—'}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ShareTile({ label, color, onClick }) {
   return (
     <button
@@ -322,7 +431,7 @@ function ShareTile({ label, color, onClick }) {
   );
 }
 
-function StoreItem({ store, onShare, getLogoUrl, sharing }) {
+function StoreItem({ store, onShare, onViewProfit, getLogoUrl, sharing }) {
   const rateText =
     typeof store.commissionRate === 'number'
       ? `${Number(store.commissionRate)}${store.commissionType === 'percentage' ? '%' : ''}`
@@ -332,7 +441,9 @@ function StoreItem({ store, onShare, getLogoUrl, sharing }) {
 
   return (
     <div className="group bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md hover:border-blue-300 transition-all">
-      <div className="flex items-start gap-3 mb-3">
+      <div className="">
+          <div className='flex items-start justify-between gap-1'>
+        <div className='flex items-start gap-3 mb-3'>
         <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-50 to-cyan-50 border border-gray-200 flex items-center justify-center shrink-0 overflow-hidden">
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -341,22 +452,34 @@ function StoreItem({ store, onShare, getLogoUrl, sharing }) {
             <StoreIcon className="w-6 h-6 text-blue-600" />
           )}
         </div>
+        
         <div className="min-w-0">
           <div className="font-semibold text-gray-900 truncate flex items-center gap-1">
             {store.name}
-            {store.isActive && <Star className="w-3.5 h-3.5 text-amber-500" />}
+            {
+            // store.isActive && <Star className="w-3.5 h-3.5 text-amber-500" />
+            }
           </div>
           <div className="text-xs text-gray-500 truncate flex items-center gap-1">
             <Globe className="w-3.5 h-3.5" />
             {store.baseUrl ? new URL(store.baseUrl).hostname.replace(/^www\./, '') : '—'}
           </div>
         </div>
+        </div>
+
+        <button
+          onClick={onViewProfit}
+          className=" text-[12px] p-1 hover:underline  text-blue-600 hover:text-blue-700"
+          title="View category-wise profit rates"
+        >
+          View Profit Rates
+        </button>
+        </div>
       </div>
 
       <div className="flex items-center justify-between text-sm mb-3">
         <div className="flex items-center gap-1 text-gray-600">
-          <Percent className="w-4 h-4 text-green-600" />
-          <span className="font-medium">{rateText || 'Variable'}</span>
+          Upto <span className="font-medium">{rateText || 'Variable'}</span>
           <span className="text-xs text-gray-500 ml-1">Commission</span>
         </div>
         <div className="text-xs text-gray-500">
@@ -376,6 +499,7 @@ function StoreItem({ store, onShare, getLogoUrl, sharing }) {
           {sharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
           {sharing ? 'Generating...' : 'Share Store'}
         </button>
+
       </div>
     </div>
   );

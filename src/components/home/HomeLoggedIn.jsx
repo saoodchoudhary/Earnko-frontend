@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import {
-  Zap, Gift, Store, TrendingUp, Filter,
-  ShoppingBag, DollarSign, Sparkles, ArrowRight,
-  Copy, Star, BarChart3
+  Zap, Store, Filter,
+  ShoppingBag, ArrowRight,
+  Copy, Star, BarChart3, ChevronLeft, ChevronRight
 } from 'lucide-react';
+import BannerCarousel from './BannerCarousel';
 
 function normalizeList(obj) {
   const candidate =
@@ -18,20 +19,21 @@ function normalizeList(obj) {
   return Array.isArray(candidate) ? candidate : [];
 }
 
-export default function HomeLoggedIn() {
-  const [stores, setStores] = useState([]);
-  const [storeId, setStoreId] = useState('');
-  const [products, setProducts] = useState([]);
-  const [offers, setOffers] = useState([]);
-  const [loadingProducts, setLoadingProducts] = useState(true);
-  const [loadingOffers, setLoadingOffers] = useState(true);
-  const [quickStats, setQuickStats] = useState({
-    totalEarnings: 0,
-    pendingPayouts: 0,
-    activeLinks: 0
-  });
+function toAbsoluteUrl(base, url) {
+  if (!url) return '';
+  const u = String(url);
+  if (u.startsWith('http://') || u.startsWith('https://')) return u;
+  if (u.startsWith('/')) return `${String(base || '').replace(/\/+$/, '')}${u}`;
+  return u;
+}
 
-  const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+function FullHeroBannerCarousel({ base }) {
+  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState([]);
+  const [active, setActive] = useState(0);
+
+  const touchStartX = useRef(null);
+  const isDragging = useRef(false);
 
   const safeJson = async (res) => {
     const ct = res.headers.get('content-type') || '';
@@ -44,40 +46,187 @@ export default function HomeLoggedIn() {
 
   useEffect(() => {
     const controller = new AbortController();
-    async function loadInitial() {
+    async function load() {
       try {
-        // Load stores
+        if (!base) { setItems([]); return; }
+        setLoading(true);
+        const res = await fetch(`${base}/api/public/banners`, { signal: controller.signal });
+        const js = await safeJson(res);
+        if (!res.ok) {
+          setItems([]);
+          return;
+        }
+        const list = Array.isArray(js?.data?.items) ? js.data.items : [];
+        setItems(list);
+        setActive(0);
+      } catch (err) {
+        if (err?.name !== 'AbortError') setItems([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+    return () => controller.abort();
+  }, [base]);
+
+  const visible = useMemo(() => (Array.isArray(items) ? items : []).filter(Boolean), [items]);
+  const count = visible.length;
+
+  const go = (idx) => {
+    if (!count) return;
+    const next = (idx + count) % count;
+    setActive(next);
+  };
+  const next = () => go(active + 1);
+  const prev = () => go(active - 1);
+
+  // Optional autoplay (uncomment if needed)
+  // useEffect(() => {
+  //   if (count <= 1) return;
+  //   const t = setInterval(() => next(), 5000);
+  //   return () => clearInterval(t);
+  // }, [count, active]);
+
+  const onTouchStart = (e) => {
+    if (!count) return;
+    touchStartX.current = e.touches?.[0]?.clientX ?? null;
+    isDragging.current = true;
+  };
+  const onTouchMove = () => {};
+  const onTouchEnd = (e) => {
+    if (!count) return;
+    const startX = touchStartX.current;
+    const endX = e.changedTouches?.[0]?.clientX ?? null;
+    touchStartX.current = null;
+
+    if (!isDragging.current) return;
+    isDragging.current = false;
+
+    if (startX == null || endX == null) return;
+    const dx = endX - startX;
+
+    // swipe threshold
+    if (Math.abs(dx) < 40) return;
+    if (dx < 0) next();
+    else prev();
+  };
+
+  const current = count ? visible[active] : null;
+  const img = current ? toAbsoluteUrl(base, current.imageUrl) : '';
+
+  return (
+    <section className="w-full bg-white">
+      <div className="relative w-full overflow-hidden">
+        {/* Aspect ratio: mobile taller, desktop wider */}
+        <div
+          className="w-full bg-gray-100"
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          {loading ? (
+            <div className="w-full h-[210px] sm:h-[260px] md:h-[420px] lg:h-[380px] animate-pulse bg-gray-200" />
+          ) : !current ? (
+            <div className="w-full h-[210px] sm:h-[260px] md:h-[420px] lg:h-[380px] flex items-center justify-center text-gray-500">
+              No banners
+            </div>
+          ) : (
+            <a
+              href={current.linkUrl || '#'}
+              target={current.linkUrl ? '_blank' : undefined}
+              rel={current.linkUrl ? 'noopener noreferrer' : undefined}
+              className="block w-full"
+              draggable={false}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={img}
+                alt={current.title || 'Banner'}
+                className="w-full h-[210px] sm:h-[260px] md:h-[420px] lg:h-[540px] object-cover select-none"
+                draggable={false}
+              />
+            </a>
+          )}
+        </div>
+
+        {/* Left/Right buttons (EarnPe style) */}
+        {count > 1 && !loading && (
+          <>
+            <button
+              type="button"
+              onClick={prev}
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 hover:bg-white shadow-lg border border-gray-200 flex items-center justify-center transition"
+              aria-label="Previous banner"
+            >
+              <ChevronLeft className="w-6 h-6 text-gray-800" />
+            </button>
+
+            <button
+              type="button"
+              onClick={next}
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 hover:bg-white shadow-lg border border-gray-200 flex items-center justify-center transition"
+              aria-label="Next banner"
+            >
+              <ChevronRight className="w-6 h-6 text-gray-800" />
+            </button>
+          </>
+        )}
+
+        {/* Dots indicator */}
+        {count > 1 && !loading && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2">
+            {visible.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => go(i)}
+                className={`h-2.5 rounded-full transition-all ${
+                  i === active ? 'w-6 bg-white shadow' : 'w-2.5 bg-white/60'
+                }`}
+                aria-label={`Go to banner ${i + 1}`}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+export default function HomeLoggedIn() {
+  const [stores, setStores] = useState([]);
+  const [storeId, setStoreId] = useState('');
+  const [products, setProducts] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+
+  const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+
+  const safeJson = async (res) => {
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      try { return await res.json(); } catch { return null; }
+    }
+    const txt = await res.text().catch(() => '');
+    return { success: false, message: txt };
+  };
+
+  // Only load stores for product filter now (since hero removed)
+  useEffect(() => {
+    const controller = new AbortController();
+    async function loadStores() {
+      try {
         const sRes = await fetch(`${base}/api/stores`, { signal: controller.signal });
         const sData = await safeJson(sRes);
         if (sRes.ok) {
           const list =
-            Array.isArray(sData?.data?.stores) ? sData.data.stores :
-            normalizeList(sData);
+            Array.isArray(sData?.data?.stores) ? sData.data.stores : normalizeList(sData);
           setStores(list);
         }
-
-        // Load quick stats
-        const token = localStorage.getItem('token');
-        if (token) {
-          const statsRes = await fetch(`${base}/api/user/quick-stats`, {
-            signal: controller.signal,
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          const statsData = await safeJson(statsRes);
-          if (statsRes.ok) {
-            const payload = statsData?.data || {};
-            setQuickStats({
-              totalEarnings: Number(payload.totalEarnings || 0),
-              pendingPayouts: Number(payload.pendingPayouts || 0),
-              activeLinks: Number(payload.activeLinks || 0),
-            });
-          }
-        }
       } catch {
-        // ignore initial failures
+        setStores([]);
       }
     }
-    if (base) loadInitial();
+    if (base) loadStores();
     return () => controller.abort();
   }, [base]);
 
@@ -105,32 +254,6 @@ export default function HomeLoggedIn() {
     return () => controller.abort();
   }, [base, storeId]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    async function loadOffers() {
-      try {
-        setLoadingOffers(true);
-        const params = new URLSearchParams({ limit: '8', sort: 'commission' });
-        const oRes = await fetch(`${base}/api/public/offers?${params.toString()}`, { signal: controller.signal });
-        const oData = await safeJson(oRes);
-        if (oRes.ok) {
-          // FIX: Backend returns offers under data.offers (fallbacks included)
-          const list =
-            Array.isArray(oData?.data?.offers) ? oData.data.offers :
-            Array.isArray(oData?.offers) ? oData.offers :
-            normalizeList(oData);
-          setOffers(list);
-        } else {
-          setOffers([]);
-        }
-      } catch {
-        setOffers([]);
-      } finally { setLoadingOffers(false); }
-    }
-    if (base) loadOffers();
-    return () => controller.abort();
-  }, [base]);
-
   const generateCuelinksProduct = async (productId) => {
     try {
       const token = localStorage.getItem('token');
@@ -157,150 +280,13 @@ export default function HomeLoggedIn() {
     }
   };
 
-  const quickActions = [
-    { icon: <Zap className="w-5 h-5" />, label: 'Generate Link', href: '/dashboard/affiliate', color: 'from-blue-500 to-cyan-500' },
-    // { icon: <Gift className="w-5 h-5" />, label: 'Top Offers', href: '/offers', color: 'from-amber-500 to-orange-500' },
-    { icon: <Store className="w-5 h-5" />, label: 'Browse Stores', href: '/stores', color: 'from-green-500 to-emerald-500' },
-    { icon: <BarChart3 className="w-5 h-5" />, label: 'Analytics', href: '/dashboard/analytics', color: 'from-purple-500 to-pink-500' },
-  ];
-
   return (
     <main className="min-h-screen mt-16 bg-gradient-to-b from-gray-50 to-white">
-      {/* Hero Section */}
-      <section className="bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 text-white">
-        <div className="container mx-auto px-4 py-12">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-            <div className="w-full">
-              <h1 className="text-3xl md:text-4xl font-bold mb-3">Welcome back! 🎉</h1>
-              <p className="text-blue-100 text-base md:text-lg mb-6 max-w-2xl">
-                Discover amazing deals and start generating affiliate links to earn commissions.
-              </p>
-
-              {/* Quick Stats */}
-              <div className="grid grid-cols-3 gap-3 max-w-xl mb-6">
-                <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 md:p-4">
-                  <div className="text-xs md:text-sm text-blue-100">Total Earnings</div>
-                  <div className="text-lg md:text-2xl font-bold">₹{quickStats.totalEarnings.toLocaleString()}</div>
-                </div>
-                <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 md:p-4">
-                  <div className="text-xs md:text-sm text-blue-100">Pending</div>
-                  <div className="text-lg md:text-2xl font-bold">₹{quickStats.pendingPayouts.toLocaleString()}</div>
-                </div>
-                <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 md:p-4">
-                  <div className="text-xs md:text-sm text-blue-100">Active Links</div>
-                  <div className="text-lg md:text-2xl font-bold">{quickStats.activeLinks}</div>
-                </div>
-              </div>
-
-              {/* Quick Actions */}
-              <div className="flex flex-wrap gap-2 md:gap-3">
-                {quickActions.map((action, index) => (
-                  <a
-                    key={index}
-                    href={action.href}
-                    className="px-4 py-2.5 md:px-6 md:py-3 bg-white text-blue-600 font-semibold rounded-xl hover:shadow-lg transition-all flex items-center gap-2"
-                  >
-                    {action.icon}
-                    <span className="text-sm md:text-base">{action.label}</span>
-                  </a>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Featured Deals */}
-      <section className="container mx-auto px-4 py-8">
-        {/* <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-3">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 md:px-4 py-2 rounded-full bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 mb-3">
-              <Sparkles className="w-4 h-4 text-amber-600" />
-              <span className="text-xs md:text-sm font-semibold text-amber-700">HOT DEALS</span>
-            </div>
-            <h2 className="text-xl md:text-3xl font-bold text-gray-900">Featured Deals</h2>
-            <p className="text-gray-600 mt-1 text-sm md:text-base">High commission offers for maximum earnings</p>
-          </div>
-          <a
-            href="/offers"
-            className="mt-1 md:mt-0 text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 text-sm md:text-base"
-          >
-            View all offers
-            <ArrowRight className="w-4 h-4" />
-          </a>
-        </div> */}
-
-        {loadingOffers ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="bg-white border border-gray-200 rounded-xl p-4 animate-pulse">
-                <div className="h-40 bg-gray-200 rounded-lg mb-4"></div>
-                <div className="h-4 bg-gray-200 rounded mb-2"></div>
-                <div className="h-3 bg-gray-200 rounded w-3/4"></div>
-              </div>
-            ))}
-          </div>
-        ) : !Array.isArray(offers) || offers.length === 0 ? (
-          <div className="bg-white border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
-            <Gift className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-700 mb-2">No offers available</h3>
-            <p className="text-gray-600">Check back later for new deals</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {offers.map((offer, idx) => (
-              <div key={offer._id || idx} className="group bg-white border border-gray-200 rounded-xl p-5 hover:shadow-xl hover:border-blue-300 transition-all duration-300">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-50 to-orange-50 flex items-center justify-center flex-shrink-0">
-                      <Gift className="w-5 h-5 text-amber-600" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs text-gray-500 truncate max-w-[180px] sm:max-w-[220px]">
-                        {offer.store?.name || 'Store'}
-                      </div>
-                      <div className="font-bold text-gray-900 line-clamp-1">
-                        {offer.title || offer.categoryKey || 'Offer'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mb-4">
-                  {offer.commissionRate ? (
-                    <div className="inline-flex items-center gap-1 px-3 py-1 bg-gradient-to-r from-green-50 to-emerald-50 rounded-full">
-                      <DollarSign className="w-3 h-3 text-green-600" />
-                      <span className="text-sm font-bold text-green-600">
-                        Up to {Number(offer.commissionRate).toFixed(0)}% commission
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-2">
-                  {/* <a
-                    href={`/stores/${offer.store?._id || ''}`}
-                    className="flex-1 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors text-center text-sm"
-                  >
-                    View Store
-                  </a> */}
-                  {/* Keep product link generation for products only; for offers, guide to generator */}
-                  <a
-                  style={{color : "white"}}
-                    href="/dashboard/affiliate"
-                    className="flex-1 py-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold rounded-lg hover:shadow-lg transition-all text-center text-sm"
-                  >
-                    Generate Link
-                  </a>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      {/* HERO REMOVED -> Full Banner Carousel */}
+      <BannerCarousel />
 
       {/* Products Section */}
-      <section className="container mx-auto px-4 pb-12">
+      <section className="container mx-auto px-4 py-8 pb-12">
         <div className="bg-white border border-gray-200 rounded-2xl p-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-3">
             <div>
@@ -351,7 +337,6 @@ export default function HomeLoggedIn() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {products.map((p) => (
                 <div key={p._id || p.id} className="group border border-gray-200 rounded-xl overflow-hidden hover:shadow-xl hover:border-blue-300 transition-all duration-300">
-                  {/* Product Image */}
                   <div className="relative h-48 overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200">
                     {Array.isArray(p.images) && p.images[0] ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -366,18 +351,15 @@ export default function HomeLoggedIn() {
                       </div>
                     )}
 
-                    {/* Store Badge */}
                     <div className="absolute top-3 left-3 px-3 py-1.5 bg-white/90 backdrop-blur-sm rounded-full text-xs font-semibold max-w-[60%] truncate">
                       {p.store?.name || 'Store'}
                     </div>
 
-                    {/* Commission Badge */}
                     <div className="absolute top-3 right-3 px-3 py-1.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-xs font-bold rounded-full">
                       High Commission
                     </div>
                   </div>
 
-                  {/* Product Info */}
                   <div className="p-5">
                     <div className="text-xs text-gray-500 uppercase tracking-wider mb-1 truncate">
                       {p.category || 'Product'}
@@ -407,7 +389,6 @@ export default function HomeLoggedIn() {
                       </div>
                     </div>
 
-                    {/* Action Button */}
                     <button
                       onClick={() => generateCuelinksProduct(p._id || p.id)}
                       className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold rounded-lg hover:shadow-lg transition-all flex items-center justify-center gap-2 group"
@@ -421,7 +402,6 @@ export default function HomeLoggedIn() {
             </div>
           )}
 
-          {/* Load More Button */}
           {products.length > 0 && (
             <div className="mt-8 text-center">
               <a
@@ -448,7 +428,7 @@ export default function HomeLoggedIn() {
               Start generating affiliate links and earn commissions on every sale
             </p>
             <a
-            style={{color:"white"}}
+              style={{ color: 'white' }}
               href="/dashboard/affiliate"
               className="inline-flex items-center gap-2 px-8 py-3.5 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-bold rounded-xl hover:shadow-xl transition-all"
             >

@@ -7,7 +7,8 @@ import { logout } from '@/store/slices/authSlice'
 import { 
   Grid, ClipboardList, DollarSign, CreditCard, Users, LogOut, 
   Store as StoreIcon, Tag, MousePointer, Webhook, Settings as SettingsIcon,
-  Shield, AlertCircle, ChevronRight, Menu, X, Bell, Search, User, ArrowLeft, RefreshCw
+  Shield, AlertCircle, ChevronRight, Menu, X, Bell, Search, User, ArrowLeft, RefreshCw,
+  ImageIcon
 } from 'lucide-react'
 
 export default function AdminLayout({ children }) {
@@ -185,6 +186,7 @@ export default function AdminLayout({ children }) {
       title: 'System', 
       items: [
         { label: 'Webhooks', href: '/admin/webhooks', icon: <Webhook className="w-4 h-4" /> },
+        {label: 'Banners', href: '/admin/banners', icon: <ImageIcon className="w-4 h-4" />},
         { label: 'Settings', href: '/admin/settings', icon: <SettingsIcon className="w-4 h-4" /> },
       ]
     },

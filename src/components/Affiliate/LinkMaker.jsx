@@ -22,7 +22,12 @@ export default function LinkMaker() {
   }
 
   function validateUrl(url) {
-    try { new URL(url); return true } catch { return false }
+    try {
+      new URL(url)
+      return true
+    } catch {
+      return false
+    }
   }
 
   async function handleMakeLink(e) {
@@ -62,7 +67,7 @@ export default function LinkMaker() {
         return
       }
 
-      setResult(data.data || data)
+      setResult(data?.data || data)
       toast.success('Affiliate link created!')
       setInputUrl('')
     } catch (err) {
@@ -73,15 +78,17 @@ export default function LinkMaker() {
     }
   }
 
-  function handleCopy() {
-    if (!result?.link) return
-    navigator.clipboard.writeText(result.link)
-      .then(() => {
-        setCopied(true)
-        toast.success('Link copied to clipboard!')
-        setTimeout(() => setCopied(false), 2000)
-      })
-      .catch(() => toast.error('Copy failed'))
+  const affiliateLink = result?.link || ''
+
+  async function copyText(text, msg = 'Copied!') {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      toast.success(msg)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast.error('Copy failed')
+    }
   }
 
   return (
@@ -94,7 +101,7 @@ export default function LinkMaker() {
           <input
             value={inputUrl}
             onChange={(e) => setInputUrl(e.target.value)}
-            placeholder="Paste any product URL (Amazon, Flipkart, Myntra, etc.)"
+            placeholder="Paste any product URL"
             className="w-full pl-12 pr-4 py-3.5 border border-gray-300 rounded-lg focus:border-gray-900 focus:ring-2 focus:ring-gray-900/20 outline-none transition"
             disabled={loading}
           />
@@ -102,7 +109,7 @@ export default function LinkMaker() {
 
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <Sparkles className="w-4 h-4" />
-          <span>Supports 500+ partner stores with competitive commission rates</span>
+          <span>Tip: Paste the website product link (not app link).</span>
         </div>
 
         {error && (
@@ -116,60 +123,40 @@ export default function LinkMaker() {
           disabled={loading || !inputUrl.trim()}
           className="w-full flex items-center justify-center gap-2 py-3.5 px-4 bg-gradient-to-r from-gray-900 to-gray-800 text-white rounded-lg hover:shadow-lg transition-all duration-300 font-medium disabled:opacity-70 disabled:cursor-not-allowed"
         >
-          {loading ? (
-            <>
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              <span>Creating Link...</span>
-            </>
-          ) : (
-            <>
-              <Link2 className="w-5 h-5" />
-              <span>Generate Affiliate Link</span>
-            </>
-          )}
+          <Link2 className="w-5 h-5" />
+          <span>{loading ? 'Creating...' : 'Generate Link'}</span>
         </button>
       </form>
 
       {result && (
-        <div className="mt-6 animate-in fade-in duration-300">
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
-                  <Link2 className="w-4 h-4 text-blue-600" />
-                </div>
-                <span className="font-medium text-gray-900">Your Affiliate Link</span>
+        <div className="mt-6 space-y-4">
+          <div className="bg-white border rounded-xl p-4">
+            <div className="text-sm text-gray-600 mb-2">Affiliate Link:</div>
+
+            <div className="flex gap-2">
+              <div className="flex-1 bg-gray-50 border rounded-lg p-3 text-sm font-medium break-all">
+                {affiliateLink}
               </div>
-              <span className="text-xs font-medium bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                Ready to share
-              </span>
+
+              <button
+                onClick={() => copyText(affiliateLink, 'Affiliate link copied')}
+                disabled={!affiliateLink}
+                className="flex items-center gap-2 px-4 py-3 bg-gray-900 text-white rounded-lg disabled:opacity-60"
+              >
+                <Copy className="w-4 h-4" />
+                {copied ? 'Copied' : 'Copy'}
+              </button>
             </div>
 
-            <div className="mb-4">
-              <div className="text-sm text-gray-600 mb-2">Copy this link and share anywhere:</div>
-              <div className="flex gap-2">
-                <div className="flex-1 bg-white border border-gray-300 rounded-lg p-3 text-sm font-medium text-gray-900 break-all">
-                  {result.link}
-                </div>
-                <button
-                  onClick={handleCopy}
-                  className="flex items-center gap-2 px-4 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
-                >
-                  <Copy className="w-4 h-4" />
-                  {copied ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-3">
+            <div className="mt-3">
               <a
-                href={result.link}
+                href={affiliateLink}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2.5 border rounded-lg text-gray-700 hover:bg-gray-50"
               >
                 <ExternalLink className="w-4 h-4" />
-                <span className="text-sm font-medium">Open Link</span>
+                <span className="text-sm font-medium">Open</span>
               </a>
             </div>
           </div>

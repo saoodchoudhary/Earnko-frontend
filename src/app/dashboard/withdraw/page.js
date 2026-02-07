@@ -160,7 +160,7 @@ export default function WithdrawPage() {
   }, [amount, method, upiId, bank]);
 
   const availableBalance = wallet?.availableBalance || 0;
-  const minimumWithdrawal = 10; // UI min; backend enforces env MIN_PAYOUT_AMOUNT too
+  const minimumWithdrawal = 100; // UI min; backend enforces env MIN_PAYOUT_AMOUNT too
   const maximumWithdrawal = 50000;
 
   const submitWithdrawal = async (e) => {
@@ -280,7 +280,7 @@ export default function WithdrawPage() {
           {/* Left Column - Stats & Form */}
           <div className="lg:col-span-2 space-y-6">
             {/* Wallet Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <StatCard
                 title="Available Balance"
                 value={availableBalance}
@@ -312,7 +312,7 @@ export default function WithdrawPage() {
                 icon={<IndianRupee className="w-5 h-5" />}
                 color="from-indigo-500 to-purple-600"
               />
-            </div>
+            </div> */}
 
             {/* Withdrawal Form */}
             <div className="bg-white border border-gray-200 rounded-xl p-6">
@@ -558,7 +558,7 @@ export default function WithdrawPage() {
                   </div>
                   <div>
                     <div className="text-sm font-medium text-gray-900">Processing Time</div>
-                    <div className="text-xs text-gray-600">24-48 hours for processing</div>
+                    <div className="text-xs text-gray-600">3 To 4 Working Days</div>
                   </div>
                 </div>
 
@@ -572,15 +572,6 @@ export default function WithdrawPage() {
                   </div>
                 </div>
 
-                <div className="flex items-start gap-2">
-                  <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">Maximum Withdrawal</div>
-                    <div className="text-xs text-gray-600">₹{maximumWithdrawal.toLocaleString()} maximum</div>
-                  </div>
-                </div>
 
                 <div className="flex items-start gap-2">
                   <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
