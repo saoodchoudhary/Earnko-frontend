@@ -13,7 +13,8 @@ import {
   PieChart, TrendingUp as TrendingIcon, Gift, Shield,
   HelpCircle, MessageSquare, FileText, Calendar,
   ChevronDown, Globe, Shield as ShieldIcon,
-  Target, Clock, Star, ArrowLeft, RefreshCw
+  Target, Clock, Star, ArrowLeft, RefreshCw,
+  HomeIcon
 } from 'lucide-react'
 
 // Organize navigation items by categories
@@ -711,8 +712,8 @@ export default function DashboardLayout({ children }) {
         {/* Bottom Mobile Nav - Essential Items Only */}
         <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-30">
           <div className="flex items-center justify-around py-2">
-            <Link href="/dashboard" className="flex flex-col items-center p-2">
-              <Grid className="w-5 h-5 text-gray-600" />
+            <Link href="/" className="flex flex-col items-center p-2">
+              <HomeIcon className="w-5 h-5 text-gray-600" />
               <span className="text-xs mt-1">Home</span>
             </Link>
             <Link href="/dashboard/analytics" className="flex flex-col items-center p-2">
@@ -727,9 +728,9 @@ export default function DashboardLayout({ children }) {
               <Wallet className="w-5 h-5 text-gray-600" />
               <span className="text-xs mt-1">Wallet</span>
             </Link>
-            <Link href="/dashboard/settings" className="flex flex-col items-center p-2">
-              <SettingsIcon className="w-5 h-5 text-gray-600" />
-              <span className="text-xs mt-1">More</span>
+            <Link href="/dashboard" className="flex flex-col items-center p-2">
+              <Grid className="w-5 h-5 text-gray-600" />
+              <span className="text-xs mt-1">Dashboard</span>
             </Link>
           </div>
         </div>

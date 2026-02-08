@@ -78,12 +78,17 @@ export default function HomePage() {
             </section>
           </main>
         ) : isLoggedIn ? (
+          <div className='mb-18 md:mb-0'>
           <HomeLoggedIn />
+      <Footer />
+      </div>
         ) : (
+          <div>
           <HomeMarketing />
+      <Footer />
+          </div>
         )}
       </div>
-      <Footer />
     </>
   );
 }
