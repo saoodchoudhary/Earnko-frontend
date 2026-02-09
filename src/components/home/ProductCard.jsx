@@ -15,6 +15,15 @@ function getStoreNetwork(p) {
   return (s.affiliateNetwork || s.network || p?.affiliateNetwork || p?.network || 'cuelinks');
 }
 
+async function safeJson(res) {
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) {
+    try { return await res.json(); } catch { return null; }
+  }
+  const txt = await res.text().catch(() => '');
+  return { success: false, message: txt };
+}
+
 export default function ProductCard({ product, base }) {
   const [copying, setCopying] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -42,11 +51,12 @@ export default function ProductCard({ product, base }) {
       const token = localStorage.getItem('token');
       if (!token) return toast.error('Please login to generate affiliate links');
 
+      const productId = product?._id || product?.id;
+      if (!productId) return toast.error('Invalid product');
+
       setCopying(true);
 
       const network = getStoreNetwork(product);
-      const productId = product?._id || product?.id;
-
       const endpoint =
         network === 'extrape'
           ? '/api/links/generate-extrape-product'
@@ -61,12 +71,11 @@ export default function ProductCard({ product, base }) {
         body: JSON.stringify({ productId }),
       });
 
-      const ct = res.headers.get('content-type') || '';
-      const data = ct.includes('application/json') ? await res.json().catch(() => null) : null;
+      const data = await safeJson(res);
 
       if (!res.ok) {
         if (res.status === 409 && data?.code === 'campaign_approval_required') {
-          toast.error('Campaign needs approval. Please apply in network panel.');
+          toast.error('Campaign approval required. Please apply in network panel.');
           return;
         }
         throw new Error(data?.message || 'Failed to generate link');
@@ -88,28 +97,20 @@ export default function ProductCard({ product, base }) {
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden hover:shadow-lg transition">
-      {/* Image */}
       <div className="relative h-52 bg-gray-100">
         {img ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={img}
-            alt={title}
-            className="w-full h-full object-cover"
-            draggable={false}
-          />
+          <img src={img} alt={title} className="w-full h-full object-cover" draggable={false} />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-gray-400">
             <ShoppingBag className="w-14 h-14" />
           </div>
         )}
 
-        {/* top badges */}
         <div className="absolute top-3 left-3 right-3 flex items-start justify-between gap-2">
           <div className="bg-white/95 backdrop-blur px-3 py-1.5 rounded-full border border-gray-200 text-xs font-bold text-gray-800 max-w-[70%] truncate">
             {storeName}
           </div>
-
           {discountText ? (
             <div className="bg-gradient-to-r from-amber-500 to-orange-600 text-white px-3 py-1.5 rounded-full text-xs font-extrabold shadow">
               {discountText}
@@ -120,7 +121,6 @@ export default function ProductCard({ product, base }) {
         <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white to-transparent" />
       </div>
 
-      {/* body */}
       <div className="p-4">
         <div className="font-extrabold text-gray-900 text-[15px] leading-snug line-clamp-2 min-h-[44px]">
           {title}

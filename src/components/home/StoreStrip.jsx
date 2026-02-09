@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Store as StoreIcon, Link2, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Store as StoreIcon, Share2, ExternalLink, Loader2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 function logoUrl(base, logo) {
@@ -12,11 +12,24 @@ function logoUrl(base, logo) {
   return u;
 }
 
-export default function StoreStrip({ base, stores = [], title = 'Premium Partners' }) {
-  const scrollerRef = useRef(null);
-  const list = useMemo(() => (Array.isArray(stores) ? stores : []).filter(s => s?.isActive !== false), [stores]);
+async function safeJson(res) {
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) {
+    try { return await res.json(); } catch { return null; }
+  }
+  const txt = await res.text().catch(() => '');
+  return { success: false, message: txt };
+}
 
-  const [busyId, setBusyId] = useState(null);
+export default function StoreStrip({ base, stores = [], title = 'Featured Partners' }) {
+  const scrollerRef = useRef(null);
+
+  const list = useMemo(
+    () => (Array.isArray(stores) ? stores : []).filter(s => s && s.isActive !== false),
+    [stores]
+  );
+
+  const [sharingStoreId, setSharingStoreId] = useState(null);
 
   const scrollByAmount = (dir) => {
     const el = scrollerRef.current;
@@ -25,37 +38,61 @@ export default function StoreStrip({ base, stores = [], title = 'Premium Partner
     el.scrollBy({ left: dir * amount, behavior: 'smooth' });
   };
 
-  const generateStoreLink = async (storeId) => {
+  const requireLogin = () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) {
+      toast.error('Please login to generate link');
+      return null;
+    }
+    return token;
+  };
+
+  // EXACTLY like Stores page: POST /api/affiliate/link-from-url
+  const generateStoreLink = async (store) => {
+    const token = requireLogin();
+    if (!token) return;
+
+    const url = store?.baseUrl;
+    if (!url) {
+      toast.error('This store does not have a shareable base URL yet');
+      return;
+    }
+    if (!base) {
+      toast.error('NEXT_PUBLIC_BACKEND_URL not set');
+      return;
+    }
+
     try {
-      const token = localStorage.getItem('token');
-      if (!token) return toast.error('Please login to generate link');
+      setSharingStoreId(store._id);
 
-      setBusyId(storeId);
-
-      // NOTE: adjust endpoint to your backend if different
-      const res = await fetch(`${base}/api/links/generate-store`, {
+      const res = await fetch(`${base}/api/affiliate/link-from-url`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: token ? `Bearer ${token}` : ''
         },
-        body: JSON.stringify({ storeId })
+        body: JSON.stringify({ url, storeId: store._id })
       });
 
-      const ct = res.headers.get('content-type') || '';
-      const data = ct.includes('application/json') ? await res.json().catch(() => null) : null;
+      const js = await safeJson(res);
 
-      if (!res.ok) throw new Error(data?.message || 'Failed to generate store link');
+      if (!res.ok) {
+        if (res.status === 409 && js?.code === 'campaign_approval_required') {
+          toast.error('Campaign approval required for this store');
+          return;
+        }
+        throw new Error(js?.message || 'Failed to generate link');
+      }
 
-      const link = data?.data?.link || data?.link;
-      if (!link) throw new Error('No link returned');
+      const link = js?.data?.link;
+      if (!link) throw new Error('No provider link returned');
 
       await navigator.clipboard.writeText(link);
       toast.success('Store link copied!');
     } catch (err) {
       toast.error(err?.message || 'Failed to generate link');
     } finally {
-      setBusyId(null);
+      setSharingStoreId(null);
     }
   };
 
@@ -96,13 +133,12 @@ export default function StoreStrip({ base, stores = [], title = 'Premium Partner
         >
           {list.map((s) => {
             const img = logoUrl(base, s.logo);
-            const id = s._id || s.id;
-            const isBusy = busyId === id;
+            const isSharing = sharingStoreId === s._id;
 
             return (
               <div
-                key={id || s.name}
-                className="snap-start shrink-0 w-[260px] sm:w-[300px]"
+                key={s._id || s.id || s.name}
+                className="snap-start shrink-0 w-[265px] sm:w-[310px]"
               >
                 <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 rounded-2xl p-4 hover:shadow-md transition">
                   <div className="flex items-center gap-3">
@@ -114,9 +150,12 @@ export default function StoreStrip({ base, stores = [], title = 'Premium Partner
                         <StoreIcon className="w-7 h-7 text-gray-600" />
                       )}
                     </div>
+
                     <div className="min-w-0 flex-1">
                       <div className="font-extrabold text-gray-900 truncate">{s.name}</div>
-                      <div className="text-xs text-gray-600 mt-0.5">High commission partner</div>
+                      <div className="text-xs text-gray-600 mt-0.5 truncate">
+                        {s.baseUrl ? (() => { try { return new URL(s.baseUrl).hostname.replace(/^www\./, ''); } catch { return '—'; } })() : '—'}
+                      </div>
                     </div>
                   </div>
 
@@ -131,31 +170,50 @@ export default function StoreStrip({ base, stores = [], title = 'Premium Partner
 
                     <button
                       type="button"
-                      onClick={() => generateStoreLink(id)}
-                      disabled={isBusy}
-                      className="py-2.5 rounded-xl font-extrabold text-white text-sm bg-gradient-to-r from-blue-600 to-cyan-500 hover:shadow-md transition disabled:opacity-70 flex items-center justify-center gap-2"
+                      onClick={() => generateStoreLink(s)}
+                      disabled={isSharing}
+                      className={`py-2.5 rounded-xl font-extrabold text-white text-sm transition flex items-center justify-center gap-2 ${
+                        isSharing
+                          ? 'bg-blue-400 cursor-wait'
+                          : 'bg-gradient-to-r from-blue-600 to-cyan-500 hover:shadow-md'
+                      }`}
+                      title="Generate affiliate link"
                     >
-                      <Link2 className="w-4 h-4" />
-                      {isBusy ? '...' : 'Link'}
+                      {isSharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+                      {isSharing ? 'Generating...' : 'Generate'}
                     </button>
+                  </div>
+
+                  <div className="mt-3 text-[11px] text-gray-500 flex items-center justify-between">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                      Active
+                    </span>
+                    <span className="font-semibold text-gray-600">High commission</span>
                   </div>
                 </div>
               </div>
             );
           })}
         </div>
-
-        <style jsx global>{`
-          .no-scrollbar {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-            -webkit-overflow-scrolling: touch;
-          }
-          .no-scrollbar::-webkit-scrollbar {
-            display: none;
-          }
-        `}</style>
       </div>
+
+      <NoScrollbar />
     </section>
+  );
+}
+
+function NoScrollbar() {
+  return (
+    <style jsx global>{`
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+      }
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+    `}</style>
   );
 }

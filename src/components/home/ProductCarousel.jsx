@@ -22,14 +22,14 @@ export default function ProductCarousel({ title, subtitle, rightHref, children }
         </div>
 
         <div className="flex items-center gap-2">
-          {rightHref ? (
+          {/* {rightHref ? (
             <a
               href={rightHref}
               className="text-sm font-bold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
             >
               View all <ArrowRight className="w-4 h-4" />
             </a>
-          ) : null}
+          ) : null} */}
 
           <div className="flex items-center gap-2">
             <button
@@ -59,16 +59,22 @@ export default function ProductCarousel({ title, subtitle, rightHref, children }
         {children}
       </div>
 
-      <style jsx global>{`
-        .no-scrollbar {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-          -webkit-overflow-scrolling: touch;
-        }
-        .no-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-      `}</style>
+      <NoScrollbar />
     </div>
+  );
+}
+
+function NoScrollbar() {
+  return (
+    <style jsx global>{`
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+      }
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+    `}</style>
   );
 }

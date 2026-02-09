@@ -19,6 +19,15 @@ function normalizeList(obj) {
   return Array.isArray(candidate) ? candidate : [];
 }
 
+async function safeJson(res) {
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) {
+    try { return await res.json(); } catch { return null; }
+  }
+  const txt = await res.text().catch(() => '');
+  return { success: false, message: txt };
+}
+
 export default function HomeLoggedIn() {
   const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
@@ -27,28 +36,16 @@ export default function HomeLoggedIn() {
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
 
-  const safeJson = async (res) => {
-    const ct = res.headers.get('content-type') || '';
-    if (ct.includes('application/json')) {
-      try { return await res.json(); } catch { return null; }
-    }
-    const txt = await res.text().catch(() => '');
-    return { success: false, message: txt };
-  };
-
   useEffect(() => {
     const controller = new AbortController();
     async function loadStores() {
       try {
         if (!base) return;
-        const sRes = await fetch(`${base}/api/stores`, { signal: controller.signal });
-        const sData = await safeJson(sRes);
-        if (sRes.ok) {
-          const list = Array.isArray(sData?.data?.stores) ? sData.data.stores : normalizeList(sData);
-          setStores(list);
-        } else {
-          setStores([]);
-        }
+        const res = await fetch(`${base}/api/stores`, { signal: controller.signal });
+        const js = await safeJson(res);
+        if (!res.ok) { setStores([]); return; }
+        const list = Array.isArray(js?.data?.stores) ? js.data.stores : normalizeList(js);
+        setStores(list);
       } catch {
         setStores([]);
       }
@@ -69,11 +66,11 @@ export default function HomeLoggedIn() {
         params.set('sort', 'popular');
         params.set('limit', '12');
 
-        const pRes = await fetch(`${base}/api/products?${params.toString()}`, { signal: controller.signal });
-        const pData = await safeJson(pRes);
+        const res = await fetch(`${base}/api/products?${params.toString()}`, { signal: controller.signal });
+        const js = await safeJson(res);
 
-        if (pRes.ok) setProducts(normalizeList(pData));
-        else setProducts([]);
+        if (!res.ok) { setProducts([]); return; }
+        setProducts(normalizeList(js));
       } catch {
         setProducts([]);
       } finally {
@@ -89,28 +86,24 @@ export default function HomeLoggedIn() {
 
   return (
     <main className="min-h-screen mt-16 bg-gradient-to-b from-gray-50 via-white to-white pb-28 md:pb-10">
-      {/* soft background glow (brand-ish) */}
+      {/* soft background glow */}
       <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">
         <div className="absolute -top-24 left-[-80px] w-72 h-72 bg-blue-400/10 rounded-full blur-3xl" />
         <div className="absolute top-40 right-[-120px] w-96 h-96 bg-cyan-400/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-1/3 w-96 h-96 bg-indigo-400/10 rounded-full blur-3xl" />
       </div>
 
-      {/* Banner */}
       <div className="relative">
         <BannerCarousel />
-        {/* <div className="absolute -bottom-3 left-1/2 -translate-x-1/2">
+        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2">
           <div className="flex items-center gap-2 bg-white/95 backdrop-blur px-4 py-2 rounded-full shadow-lg border border-gray-200">
             <Zap className="w-4 h-4 text-amber-500" />
             <span className="text-xs font-semibold text-gray-700">Hot Deals Live</span>
           </div>
-        </div> */}
+        </div>
       </div>
 
-      {/* Stores strip (with generate link buttons inside cards) */}
       <StoreStrip base={base} stores={stores} title="Featured Partners" />
 
-      {/* Products */}
       <section className="container mx-auto px-4 pt-6 pb-10">
         <div className="mb-6">
           <div className="flex items-start gap-3">
@@ -122,28 +115,17 @@ export default function HomeLoggedIn() {
                 Top Selling Flash Deals
               </h1>
               <p className="text-gray-600 mt-1 text-sm md:text-base">
-                Curated deals • High conversion • Swipe on mobile
+                Curated deals • Swipe on mobile • Copy link to earn commission
               </p>
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-gray-600">
-            <div className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-full px-3 py-1.5">
-              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse" />
-              <span className="font-semibold">{list.length}</span> Active deals
-            </div>
-            <div className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-full px-3 py-1.5">
-              Updated just now
             </div>
           </div>
         </div>
 
-        {/* Filter */}
         <div className="mb-6 bg-white/95 backdrop-blur border border-gray-200 rounded-2xl p-4 md:p-5 shadow-sm">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="text-sm font-bold text-gray-900">Filter by store</div>
-              <div className="text-xs text-gray-600 mt-1">Choose a partner to refine results</div>
+              <div className="text-xs text-gray-600 mt-1">Choose partner to refine results</div>
             </div>
 
             <div className="relative w-full md:w-[380px]">
@@ -167,14 +149,9 @@ export default function HomeLoggedIn() {
           </div>
         </div>
 
-        {/* Content */}
         {loadingProducts ? (
-          <div className="bg-white border border-gray-200 rounded-2xl p-5 md:p-6 shadow-sm">
-            <div className="flex items-center justify-center gap-3 mb-5">
-              <div className="w-7 h-7 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-              <div className="text-sm md:text-base font-semibold text-gray-700">Loading deals...</div>
-            </div>
-
+          <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+            <div className="h-6 w-44 bg-gray-200 rounded animate-pulse mb-4" />
             <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory no-scrollbar pb-2">
               {[...Array(4)].map((_, i) => (
                 <div key={i} className="snap-start min-w-[85%] sm:min-w-[360px]">
@@ -192,22 +169,11 @@ export default function HomeLoggedIn() {
             <div className="mt-1 text-sm text-gray-600 max-w-md mx-auto">
               Try selecting a different store or check back later.
             </div>
-            <button
-              onClick={() => setStoreId('')}
-              className="mt-6 px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-bold rounded-xl hover:shadow-lg transition"
-            >
-              Reset Filters
-            </button>
           </div>
         ) : (
           <>
-            {/* Mobile horizontal carousel */}
             <div className="md:hidden">
-              <ProductCarousel
-                title="Exclusive Deals"
-                subtitle="Swipe to discover more"
-                rightHref="/products"
-              >
+              <ProductCarousel title="Exclusive Deals" subtitle="Swipe to discover more" rightHref="/products">
                 {list.map((p) => (
                   <div key={p._id || p.id} className="snap-start min-w-[85%] sm:min-w-[360px]">
                     <ProductCard product={p} base={base} />
@@ -216,8 +182,7 @@ export default function HomeLoggedIn() {
               </ProductCarousel>
             </div>
 
-            {/* Desktop grid */}
-            <div className="hidden md:block bg-white border border-gray-200 rounded-2xl p-6 md:p-8 shadow-sm">
+            <div className="hidden md:block bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {list.map((p) => (
                   <ProductCard key={p._id || p.id} product={p} base={base} />
@@ -229,20 +194,21 @@ export default function HomeLoggedIn() {
       </section>
 
       <BottomBar />
-      <NoScrollbarStyles />
+      <NoScrollbar />
     </main>
   );
 }
 
-function NoScrollbarStyles() {
+function NoScrollbar() {
   return (
     <style jsx global>{`
       .no-scrollbar {
-        -ms-overflow-style: none; /* IE/Edge */
-        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
       }
       .no-scrollbar::-webkit-scrollbar {
-        display: none; /* Chrome/Safari */
+        display: none;
       }
     `}</style>
   );
