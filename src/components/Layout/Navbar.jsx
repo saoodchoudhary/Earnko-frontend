@@ -7,7 +7,8 @@ import {
   Menu, X, TrendingUp, LogOut, User,
   LayoutDashboardIcon, Zap, ChevronDown,
   Gift, Store, Bell, Settings,
-  Sparkles, BarChart3, CreditCard, RefreshCw
+  Sparkles, BarChart3, CreditCard, RefreshCw,
+  CircleQuestionMark
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -149,6 +150,7 @@ export default function Navbar() {
     { href: '/dashboard/affiliate', label: 'Generate Links', icon: <Zap className="w-4 h-4" /> },
     { href: '/dashboard/analytics', label: 'Analytics', icon: <BarChart3 className="w-4 h-4" /> },
     { href: '/dashboard/wallet', label: 'My Wallet', icon: <CreditCard className="w-4 h-4" /> },
+    { href: '/dashboard/support', label: "Help & Support", icon: <CircleQuestionMark className='w-4 h-4' /> },
     { href: '/dashboard/settings', label: 'Settings', icon: <Settings className="w-4 h-4" /> },
   ];
 

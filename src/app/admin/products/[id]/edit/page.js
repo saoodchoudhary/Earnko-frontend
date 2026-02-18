@@ -3,8 +3,8 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'react-hot-toast'
-import { 
-  ArrowLeft, Save, Loader2, Package, 
+import {
+  ArrowLeft, Save, Loader2, Package,
   Tag, DollarSign, AlertCircle, ChevronRight, Globe
 } from 'lucide-react'
 import ProductForm from '../../../../../components/admin/ProductForm'
@@ -23,6 +23,7 @@ export default function AdminProductEditPage() {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
     return { Authorization: token ? `Bearer ${token}` : '' }
   }
+
   const ensureEnvConfigured = () => {
     if (!base && !envWarned.current) {
       envWarned.current = true
@@ -34,14 +35,17 @@ export default function AdminProductEditPage() {
     if (!id) return
     const controller = new AbortController()
     let ignore = false
+
     async function load() {
       try {
         ensureEnvConfigured()
         setLoading(true)
+
         const res = await fetch(`${base}/api/admin/products/${id}`, {
           signal: controller.signal,
           headers: getHeaders()
         })
+
         const contentType = res.headers.get('content-type') || ''
         if (!res.ok) {
           let msg = `Failed to load (HTTP ${res.status})`
@@ -58,35 +62,41 @@ export default function AdminProductEditPage() {
           }
           throw new Error(msg)
         }
+
         const data = contentType.includes('application/json') ? await res.json().catch(() => null) : null
         if (!ignore) setItem(data?.data?.item || null)
       } catch (err) {
         if (err?.name !== 'AbortError' && !ignore) {
           toast.error(err.message || 'Error loading product')
         }
-      } finally { 
-        if (!ignore) setLoading(false) 
+      } finally {
+        if (!ignore) setLoading(false)
       }
     }
+
     load()
     return () => {
       ignore = true
       controller.abort()
     }
+    // NOTE: base is from env; typically stable. If you want stricter linting, add base to deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   const handleSubmit = async (payload) => {
     try {
       ensureEnvConfigured()
       setSaving(true)
+
       const res = await fetch(`${base}/api/admin/products/${id}`, {
         method: 'PATCH',
-        headers: { 
-          'Content-Type': 'application/json', 
+        headers: {
+          'Content-Type': 'application/json',
           ...getHeaders()
         },
         body: JSON.stringify(payload)
       })
+
       const contentType = res.headers.get('content-type') || ''
       if (!res.ok) {
         let msg = `Failed to update (HTTP ${res.status})`
@@ -103,11 +113,14 @@ export default function AdminProductEditPage() {
         }
         throw new Error(msg)
       }
+
       toast.success('Product updated successfully!')
       router.push('/admin/products')
     } catch (err) {
       toast.error(err.message || 'Failed to update product')
-    } finally { setSaving(false) }
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (loading) {
@@ -159,14 +172,14 @@ export default function AdminProductEditPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <nav className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 mb-2">
-                <button 
+                <button
                   onClick={() => router.push('/admin')}
                   className="hover:text-gray-900 transition-colors"
                 >
                   Admin
                 </button>
                 <ChevronRight className="w-4 h-4" />
-                <button 
+                <button
                   onClick={() => router.push('/admin/products')}
                   className="hover:text-gray-900 transition-colors"
                 >
@@ -178,7 +191,7 @@ export default function AdminProductEditPage() {
               <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Edit Product</h1>
               <p className="text-xs sm:text-sm text-gray-600 mt-1">Update product details and information</p>
             </div>
-            
+
             <div className="flex items-center gap-3">
               <button
                 onClick={() => router.push('/admin/products')}
@@ -201,7 +214,7 @@ export default function AdminProductEditPage() {
               <Package className="w-5 h-5 text-gray-700" />
               Product Information
             </h2>
-            
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
               <div className="p-4 bg-gray-50 rounded-lg">
                 <div className="text-xs sm:text-sm text-gray-600 mb-1">Product ID</div>
@@ -239,10 +252,10 @@ export default function AdminProductEditPage() {
             </div>
 
             <div className="p-4 sm:p-6">
-              <ProductForm 
-                initial={item} 
-                onSubmit={handleSubmit} 
-                submitting={saving} 
+              <ProductForm
+                initial={item}
+                onSubmit={handleSubmit}
+                submitting={saving}
               />
             </div>
 
@@ -256,7 +269,7 @@ export default function AdminProductEditPage() {
                   <ArrowLeft className="w-4 h-4" />
                   Cancel
                 </button>
-                
+
                 <button
                   type="submit"
                   form="product-form"
@@ -295,7 +308,7 @@ export default function AdminProductEditPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
@@ -309,7 +322,7 @@ export default function AdminProductEditPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">

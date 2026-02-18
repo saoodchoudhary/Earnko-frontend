@@ -17,14 +17,38 @@ function normalizeHost(inputUrl) {
   }
 }
 
+function isFlipkartHost(host) {
+  return host === 'flipkart.com' || host.endsWith('.flipkart.com') || host === 'fkrt.it' || host === 'dl.flipkart.com'
+}
+
+function isMyntraHost(host) {
+  return host === 'myntra.com' || host.endsWith('.myntra.com') || host === 'myntr.it'
+}
+
+function isAjioHost(host) {
+  return host === 'ajio.com' || host.endsWith('.ajio.com')
+}
+
+function isTiraHost(host) {
+  return host === 'tirabeauty.com' || host.endsWith('.tirabeauty.com')
+}
+
+function isDotAndKeyHost(host) {
+  return host === 'dotandkey.com' || host.endsWith('.dotandkey.com')
+}
+
+/**
+ * Provider selection should mirror backend logic at a high level:
+ * - Flipkart -> ExtraPe
+ * - Myntra/Ajio/Tira/Dot&Key -> VCommission (Trackier)
+ * - Everything else -> Cuelinks
+ */
 function pickProviderByUrl(url) {
   const host = normalizeHost(url)
   if (!host) return 'unknown'
 
-  if (host === 'flipkart.com' || host.endsWith('.flipkart.com')) return 'extrape'
-  if (host === 'myntra.com' || host.endsWith('.myntra.com') || host === 'myntr.it') return 'trackier'
-  if (host === 'ajio.com' || host.endsWith('.ajio.com')) return 'trackier'
-  if (host === 'tirabeauty.com' || host.endsWith('.tirabeauty.com')) return 'trackier'
+  if (isFlipkartHost(host)) return 'extrape'
+  if (isMyntraHost(host) || isAjioHost(host) || isTiraHost(host) || isDotAndKeyHost(host)) return 'trackier'
 
   return 'cuelinks'
 }
@@ -115,7 +139,6 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
     let ignore = false
 
     async function lookupCampaigns() {
-      // Reset cuelinks-related UI when not cuelinks
       if (!showCuelinksSection) {
         if (!ignore) {
           setCampaigns([])
@@ -147,16 +170,11 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
         })
         const data = await safeJson(res)
         if (!ignore) {
-          if (res.ok) {
-            setCampaigns(data?.data?.campaigns || data?.data?.data || [])
-          } else {
-            setCampaigns([])
-          }
+          if (res.ok) setCampaigns(data?.data?.campaigns || data?.data?.data || [])
+          else setCampaigns([])
         }
       } catch (err) {
-        if (err?.name !== 'AbortError' && !ignore) {
-          toast.error('Error loading campaigns')
-        }
+        if (err?.name !== 'AbortError' && !ignore) toast.error('Error loading campaigns')
       } finally {
         if (!ignore) setCampaignLoading(false)
       }
@@ -183,7 +201,6 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
 
     onSubmit({
       ...form,
-      // store ORIGINAL merchant URL only (affiliate link should be generated at click/link-gen time)
       deeplink: form.deeplink.trim(),
       price: form.price === '' ? 0 : Number(form.price),
       images: Array.isArray(form.images) ? form.images.filter(Boolean) : [],
@@ -192,7 +209,6 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
         type: form.commissionOverride.type || null,
         maxCap: form.commissionOverride.maxCap === '' ? null : Number(form.commissionOverride.maxCap)
       },
-      // Keep cuelinks fields but they matter only when provider=cuelinks
       cuelinksChannelId: form.cuelinksChannelId || '',
       cuelinksCampaignId: form.cuelinksCampaignId || '',
       cuelinksCountryId: form.cuelinksCountryId || '',
@@ -213,14 +229,7 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
       return
     }
 
-    setValidation({
-      ok: false,
-      link: '',
-      message: '',
-      code: '',
-      host: '',
-      suggestions: []
-    })
+    setValidation({ ok: false, link: '', message: '', code: '', host: '', suggestions: [] })
 
     try {
       if (!form.deeplink.trim()) return toast.error('Enter product URL to validate')
@@ -232,10 +241,7 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
       }
       const res = await fetch(`${base}/api/admin/cuelinks/validate-link`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: token ? `Bearer ${token}` : ''
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
         body: JSON.stringify({
           url: form.deeplink,
           channel_id: form.cuelinksChannelId || undefined
@@ -261,14 +267,7 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
         return
       }
 
-      setValidation({
-        ok: true,
-        link: data?.data?.link || '',
-        message: 'Valid Cuelinks URL generated',
-        code: '',
-        host: '',
-        suggestions: []
-      })
+      setValidation({ ok: true, link: data?.data?.link || '', message: 'Valid Cuelinks URL generated', code: '', host: '', suggestions: [] })
       toast.success('Cuelinks validation successful')
     } catch (err) {
       toast.error(err.message || 'Validation failed')

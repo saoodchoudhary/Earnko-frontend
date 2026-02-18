@@ -13,19 +13,22 @@ export function middleware(req) {
     pathname.startsWith('/stores') ||
     pathname.startsWith('/products') ||
     pathname.startsWith('/login') ||
+    pathname.startsWith('/register') ||
+    pathname.startsWith('/oauth') ||        // ✅ ADD THIS
     pathname.includes('.')
   ) {
     return NextResponse.next();
   }
 
-  // treat single segment as short code
   const code = pathname.slice(1);
   if (!code) return NextResponse.next();
 
   const backend = process.env.NEXT_PUBLIC_BACKEND_URL || '';
   if (!backend) return NextResponse.next();
 
-  return NextResponse.redirect(new URL(`${backend.replace(/\/+$/, '')}/r/${encodeURIComponent(code)}`));
+  return NextResponse.redirect(
+    new URL(`${backend.replace(/\/+$/, '')}/r/${encodeURIComponent(code)}`)
+  );
 }
 
 export const config = {

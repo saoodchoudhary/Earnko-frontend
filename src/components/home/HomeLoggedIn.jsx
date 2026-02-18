@@ -94,12 +94,7 @@ export default function HomeLoggedIn() {
 
       <div className="relative">
         <BannerCarousel />
-        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2">
-          <div className="flex items-center gap-2 bg-white/95 backdrop-blur px-4 py-2 rounded-full shadow-lg border border-gray-200">
-            <Zap className="w-4 h-4 text-amber-500" />
-            <span className="text-xs font-semibold text-gray-700">Hot Deals Live</span>
-          </div>
-        </div>
+        
       </div>
 
       <StoreStrip base={base} stores={stores} title="Featured Partners" />

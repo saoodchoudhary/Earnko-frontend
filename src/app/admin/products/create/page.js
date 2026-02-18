@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'react-hot-toast'
-import { 
-  ArrowLeft, Plus, Loader2, Package, 
+import {
+  ArrowLeft, Plus, Loader2, Package,
   AlertCircle, ChevronRight, Save
 } from 'lucide-react'
 import ProductForm from '../../../../components/admin/ProductForm'
@@ -33,9 +33,9 @@ export default function AdminProductCreatePage() {
       }
       const res = await fetch(`${base}/api/admin/products`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          Authorization: token ? `Bearer ${token}` : '' 
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : ''
         },
         body: JSON.stringify(payload)
       })
@@ -53,8 +53,8 @@ export default function AdminProductCreatePage() {
       router.push('/admin/products')
     } catch (err) {
       toast.error(err.message || 'Failed to create product')
-    } finally { 
-      setSaving(false) 
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -66,14 +66,14 @@ export default function AdminProductCreatePage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <nav className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 mb-2">
-                <button 
+                <button
                   onClick={() => router.push('/admin')}
                   className="hover:text-gray-900 transition-colors"
                 >
                   Admin
                 </button>
                 <ChevronRight className="w-4 h-4" />
-                <button 
+                <button
                   onClick={() => router.push('/admin/products')}
                   className="hover:text-gray-900 transition-colors"
                 >
@@ -85,7 +85,7 @@ export default function AdminProductCreatePage() {
               <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Create New Product</h1>
               <p className="text-xs sm:text-sm text-gray-600 mt-1">Add a new product to your affiliate platform</p>
             </div>
-            
+
             <div className="flex items-center gap-3">
               <button
                 onClick={() => router.push('/admin/products')}
@@ -108,7 +108,7 @@ export default function AdminProductCreatePage() {
               <Package className="w-5 h-5 text-gray-700" />
               Product Creation
             </h2>
-            
+
             <div className="space-y-4">
               <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg">
                 <h3 className="font-medium text-blue-900 mb-2 flex items-center gap-2 text-sm">
@@ -122,7 +122,7 @@ export default function AdminProductCreatePage() {
                   <li>Review all details before saving</li>
                 </ul>
               </div>
-              
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs sm:text-sm">
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <div className="font-medium text-gray-900 mb-1">Step 1</div>
@@ -155,13 +155,12 @@ export default function AdminProductCreatePage() {
             </div>
 
             <div className="p-4 sm:p-6">
-              <ProductForm 
-                onSubmit={handleSubmit} 
-                submitting={saving} 
+              <ProductForm
+                onSubmit={handleSubmit}
+                submitting={saving}
               />
             </div>
 
-            {/* Form Actions */}
             <div className="p-4 sm:p-6 border-t border-gray-200 bg-gray-50">
               <div className="flex items-center justify-between">
                 <button
@@ -171,7 +170,7 @@ export default function AdminProductCreatePage() {
                   <ArrowLeft className="w-4 h-4" />
                   Cancel
                 </button>
-                
+
                 <button
                   type="submit"
                   form="product-form"
@@ -217,7 +216,7 @@ export default function AdminProductCreatePage() {
                 </li>
               </ul>
             </div>
-            
+
             <div className="bg-white border border-gray-200 rounded-lg p-5">
               <h3 className="font-bold text-gray-900 mb-3">Required Fields</h3>
               <ul className="space-y-2 text-xs sm:text-sm text-gray-600">

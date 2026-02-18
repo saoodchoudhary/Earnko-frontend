@@ -10,11 +10,6 @@ function firstImage(p) {
   return '';
 }
 
-function getStoreNetwork(p) {
-  const s = p?.store || {};
-  return (s.affiliateNetwork || s.network || p?.affiliateNetwork || p?.network || 'cuelinks');
-}
-
 async function safeJson(res) {
   const ct = res.headers.get('content-type') || '';
   if (ct.includes('application/json')) {
@@ -51,40 +46,53 @@ export default function ProductCard({ product, base }) {
       const token = localStorage.getItem('token');
       if (!token) return toast.error('Please login to generate affiliate links');
 
-      const productId = product?._id || product?.id;
-      if (!productId) return toast.error('Invalid product');
+      if (!base) return toast.error('NEXT_PUBLIC_BACKEND_URL not set');
+
+      const url = String(product?.deeplink || '').trim();
+      if (!url) return toast.error('Product URL missing (deeplink)');
+
+      const storeId = product?.store?._id || product?.store?.id || product?.store || null;
+      const productId = product?._id || product?.id || null;
 
       setCopying(true);
 
-      const network = getStoreNetwork(product);
-      const endpoint =
-        network === 'extrape'
-          ? '/api/links/generate-extrape-product'
-          : '/api/links/generate-cuelinks-product';
-
-      const res = await fetch(`${base}${endpoint}`, {
+      // ✅ Universal backend endpoint: backend picks cuelinks/trackier/extrape itself
+      const res = await fetch(`${base}/api/affiliate/link-from-url`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: token ? `Bearer ${token}` : '',
         },
-        body: JSON.stringify({ productId }),
+        body: JSON.stringify({
+          url,
+          // optional metadata (backend can ignore if not needed)
+          storeId: storeId || undefined,
+          productId: productId || undefined
+        }),
       });
 
       const data = await safeJson(res);
 
       if (!res.ok) {
+        // common: cuelinks approval required
         if (res.status === 409 && data?.code === 'campaign_approval_required') {
           toast.error('Campaign approval required. Please apply in network panel.');
+          return;
+        }
+        // optional: trackier missing campaign id (if backend sends this)
+        if (data?.code === 'missing_campaign_id') {
+          toast.error('VCommission campaign not configured for this domain (missing campaign id).');
           return;
         }
         throw new Error(data?.message || 'Failed to generate link');
       }
 
-      const link = data?.data?.link || data?.link;
-      if (!link) throw new Error('No link returned');
+      // Prefer short/share URL if backend returns it
+      const linkToCopy = data?.data?.shareUrl || data?.data?.link || data?.shareUrl || data?.link;
+      if (!linkToCopy) throw new Error('No link returned');
 
-      await navigator.clipboard.writeText(link);
+      await navigator.clipboard.writeText(linkToCopy);
+
       setCopied(true);
       toast.success('Affiliate link copied!');
       setTimeout(() => setCopied(false), 2500);

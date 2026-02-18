@@ -203,7 +203,7 @@ export default function BannerCarousel({
                       <img
                         src={img}
                         alt={b.title || 'Banner'}
-                        className={`w-full ${heightClass} object-cover select-none`}
+                        className={`w-full ${heightClass} object-fit select-none`}
                         draggable={false}
                       />
                     </a>
