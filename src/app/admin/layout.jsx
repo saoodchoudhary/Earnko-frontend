@@ -8,7 +8,8 @@ import {
   Grid, ClipboardList, DollarSign, CreditCard, Users, LogOut, 
   Store as StoreIcon, Tag, MousePointer, Webhook, Settings as SettingsIcon,
   Shield, AlertCircle, ChevronRight, Menu, X, Bell, Search, User, ArrowLeft, RefreshCw,
-  ImageIcon
+  ImageIcon,
+  Link2
 } from 'lucide-react'
 
 export default function AdminLayout({ children }) {

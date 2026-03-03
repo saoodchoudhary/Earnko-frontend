@@ -8,49 +8,30 @@ import {
   Calendar, RefreshCw, ExternalLink, Info
 } from 'lucide-react'
 
-function normalizeHost(inputUrl) {
-  try {
-    const u = new URL(inputUrl)
-    return u.hostname.toLowerCase().replace(/^www\./, '')
-  } catch {
-    return ''
+async function safeJson(res) {
+  const ct = res.headers.get('content-type') || ''
+  if (ct.includes('application/json')) {
+    try { return await res.json() } catch { return null }
   }
+  const txt = await res.text().catch(() => '')
+  return { success: false, message: txt }
 }
 
-function isFlipkartHost(host) {
-  return host === 'flipkart.com' || host.endsWith('.flipkart.com') || host === 'fkrt.it' || host === 'dl.flipkart.com'
+function normalizeNetwork(net) {
+  const v = String(net || '').trim().toLowerCase()
+  if (v === 'vcommission') return 'trackier'
+  return v
 }
 
-function isMyntraHost(host) {
-  return host === 'myntra.com' || host.endsWith('.myntra.com') || host === 'myntr.it'
-}
-
-function isAjioHost(host) {
-  return host === 'ajio.com' || host.endsWith('.ajio.com')
-}
-
-function isTiraHost(host) {
-  return host === 'tirabeauty.com' || host.endsWith('.tirabeauty.com')
-}
-
-function isDotAndKeyHost(host) {
-  return host === 'dotandkey.com' || host.endsWith('.dotandkey.com')
-}
-
-/**
- * Provider selection should mirror backend logic at a high level:
- * - Flipkart -> ExtraPe
- * - Myntra/Ajio/Tira/Dot&Key -> VCommission (Trackier)
- * - Everything else -> Cuelinks
- */
-function pickProviderByUrl(url) {
-  const host = normalizeHost(url)
-  if (!host) return 'unknown'
-
-  if (isFlipkartHost(host)) return 'extrape'
-  if (isMyntraHost(host) || isAjioHost(host) || isTiraHost(host) || isDotAndKeyHost(host)) return 'trackier'
-
-  return 'cuelinks'
+function providerLabelFromNetwork(net) {
+  const n = normalizeNetwork(net)
+  if (n === 'extrape') return 'ExtraPe'
+  if (n === 'trackier') return 'VCommission (Trackier)'
+  if (n === 'realcash') return 'RealCash'
+  if (n === 'cuelinks') return 'Cuelinks'
+  if (n === 'custom') return 'Custom'
+  if (!n) return '—'
+  return n
 }
 
 export default function ProductForm({ initial, onSubmit, submitting }) {
@@ -88,17 +69,16 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
     cuelinksCountryId: initial?.cuelinksCountryId || '',
   })
 
-  const provider = useMemo(() => pickProviderByUrl(form.deeplink?.trim() || ''), [form.deeplink])
-  const showCuelinksSection = provider === 'cuelinks'
+  // NEW: provider based on selected store (single source of truth)
+  const selectedStore = useMemo(() => {
+    const id = String(form.store || '')
+    if (!id) return null
+    return (Array.isArray(stores) ? stores : []).find(s => String(s._id) === id) || null
+  }, [form.store, stores])
 
-  const safeJson = async (res) => {
-    const ct = res.headers.get('content-type') || ''
-    if (ct.includes('application/json')) {
-      try { return await res.json() } catch { return null }
-    }
-    const txt = await res.text().catch(() => '')
-    return { success: false, message: txt }
-  }
+  const provider = useMemo(() => normalizeNetwork(selectedStore?.affiliateNetwork || ''), [selectedStore])
+  const showCuelinksSection = provider === 'cuelinks'
+  const providerLabel = useMemo(() => providerLabelFromNetwork(provider), [provider])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -133,7 +113,7 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
     }
   }, [])
 
-  // Campaign lookup only for cuelinks-provider URLs
+  // Campaign lookup only if selected store network is cuelinks
   useEffect(() => {
     const controller = new AbortController()
     let ignore = false
@@ -143,12 +123,13 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
         if (!ignore) {
           setCampaigns([])
           setCampaignLoading(false)
+          // keep validation state but don't break it
           setValidation(v => ({ ...v, suggestions: Array.isArray(v.suggestions) ? v.suggestions : [] }))
         }
         return
       }
 
-      const url = form.deeplink.trim()
+      const url = String(form.deeplink || '').trim()
       if (!url) { if (!ignore) setCampaigns([]); return }
 
       let host = ''
@@ -196,12 +177,12 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
   const submit = (e) => {
     e.preventDefault()
     if (!form.title.trim()) return toast.error('Title required')
-    if (!form.deeplink.trim()) return toast.error('Product URL required')
+    if (!String(form.deeplink || '').trim()) return toast.error('Product URL required')
     if (!form.store) return toast.error('Store required')
 
     onSubmit({
       ...form,
-      deeplink: form.deeplink.trim(),
+      deeplink: String(form.deeplink || '').trim(),
       price: form.price === '' ? 0 : Number(form.price),
       images: Array.isArray(form.images) ? form.images.filter(Boolean) : [],
       commissionOverride: {
@@ -225,14 +206,14 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
 
   const validateCuelinks = async () => {
     if (!showCuelinksSection) {
-      toast.error('Cuelinks validation is not applicable for this URL')
+      toast.error('Cuelinks validation is not applicable for selected store network')
       return
     }
 
     setValidation({ ok: false, link: '', message: '', code: '', host: '', suggestions: [] })
 
     try {
-      if (!form.deeplink.trim()) return toast.error('Enter product URL to validate')
+      if (!String(form.deeplink || '').trim()) return toast.error('Enter product URL to validate')
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
       const base = process.env.NEXT_PUBLIC_BACKEND_URL || ''
       if (!base) {
@@ -273,12 +254,6 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
       toast.error(err.message || 'Validation failed')
     }
   }
-
-  const providerLabel =
-    provider === 'extrape' ? 'ExtraPe (Flipkart)' :
-    provider === 'trackier' ? 'VCommission (Trackier)' :
-    provider === 'cuelinks' ? 'Cuelinks' :
-    'Unknown'
 
   return (
     <div className="">
@@ -325,7 +300,9 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
                   >
                     <option value="">Select a store</option>
                     {stores.map(s => (
-                      <option key={s._id} value={s._id}>{s.name}</option>
+                      <option key={s._id} value={s._id}>
+                        {s.name} {s.affiliateNetwork ? `(${providerLabelFromNetwork(s.affiliateNetwork)})` : ''}
+                      </option>
                     ))}
                   </select>
                 )}
@@ -397,7 +374,9 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
 
               <div className="mb-2 flex items-center gap-2 text-xs sm:text-sm text-gray-600">
                 <Info className="w-4 h-4" />
-                <span>Detected provider: <b className="text-gray-900">{providerLabel}</b></span>
+                <span>
+                  Selected store network: <b className="text-gray-900">{providerLabel}</b>
+                </span>
               </div>
 
               <div className="flex flex-col sm:flex-row gap-2">
@@ -420,9 +399,9 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
                 )}
               </div>
 
-              {!showCuelinksSection && form.deeplink.trim() && (provider === 'extrape' || provider === 'trackier') && (
+              {!showCuelinksSection && form.deeplink.trim() && (
                 <div className="mt-2 text-xs sm:text-sm text-gray-600">
-                  Cuelinks fields/validation is not required for this URL.
+                  Cuelinks fields/validation are not required for this store network.
                 </div>
               )}
             </div>
@@ -447,7 +426,11 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
                 <input
                   className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800 break-all"
                   value={img}
-                  onChange={(e) => updateImage(idx, e.target.value)}
+                  onChange={(e) => {
+                    const arr = Array.isArray(form.images) ? [...form.images] : []
+                    arr[idx] = e.target.value
+                    change('images', arr)
+                  }}
                   placeholder="https://image-url.com/product.jpg"
                 />
                 <button
@@ -462,7 +445,7 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
 
             <button
               type="button"
-              onClick={addImage}
+              onClick={() => addImage()}
               className="w-full py-2.5 sm:py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 text-sm"
             >
               <Plus className="w-4 h-4" />
@@ -486,19 +469,16 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Commission Rate (%)
+                Commission Rate
               </label>
-              <div className="relative">
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">%</span>
-                <input
-                  className="w-full pr-8 sm:pr-10 pl-3 sm:pl-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
-                  type="number"
-                  step="0.01"
-                  value={form.commissionOverride.rate}
-                  onChange={(e) => changeOverride('rate', e.target.value)}
-                  placeholder="0.00"
-                />
-              </div>
+              <input
+                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                type="number"
+                step="0.01"
+                value={form.commissionOverride.rate}
+                onChange={(e) => changeOverride('rate', e.target.value)}
+                placeholder="e.g. 5"
+              />
             </div>
 
             <div>
@@ -520,17 +500,14 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Max Cap (₹)
               </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">₹</span>
-                <input
-                  className="w-full pl-8 pr-3 sm:pr-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
-                  type="number"
-                  step="0.01"
-                  value={form.commissionOverride.maxCap}
-                  onChange={(e) => changeOverride('maxCap', e.target.value)}
-                  placeholder="Maximum commission"
-                />
-              </div>
+              <input
+                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-800 focus:border-gray-800"
+                type="number"
+                step="0.01"
+                value={form.commissionOverride.maxCap}
+                onChange={(e) => changeOverride('maxCap', e.target.value)}
+                placeholder="Optional"
+              />
             </div>
           </div>
         </div>
@@ -558,6 +535,7 @@ export default function ProductForm({ initial, onSubmit, submitting }) {
               </button>
             </div>
 
+            {/* keep rest of your existing cuelinks UI exactly same */}
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>

@@ -397,7 +397,7 @@ export default function SupportPage() {
                   </div>
                   <div>
                     <div className="text-sm font-medium text-gray-900">Email Support</div>
-                    <div className="text-sm text-gray-600">officialearnko@gmail.com</div>
+                    <div className="text-sm text-gray-600">contact@earnko.com</div>
                   </div>
                 </div>
 

@@ -2,10 +2,12 @@
 
 import Link from 'next/link';
 import {
-  Mail, Phone, MapPin, ArrowRight,
-  Shield, TrendingUp, Instagram,
+  Mail, MapPin, ArrowRight,
+  Shield, Instagram,
   Twitter, Linkedin, CreditCard
 } from 'lucide-react';
+
+const CONTACT_EMAIL = 'contact@earnko.com';
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -18,16 +20,11 @@ export default function Footer() {
           {/* Brand & Description */}
           <div className="space-y-6">
             <div className="flex items-center gap-3">
-              {/* Logo: gradient removed, solid background */}
-              {/* <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center ring-1 ring-white/20 shadow-sm">
-                <TrendingUp className="w-6 h-6 text-[#0B1220]" />
-              </div> */}
-
-              <img 
-               src='/images/earnko-logo-round.png'
-               alt='earnko logo'
-               className='w-[40px]'
-               />
+              <img
+                src="/images/earnko-logo-round.png"
+                alt="earnko logo"
+                className="w-[40px]"
+              />
               <div>
                 <h2 className="text-xl font-bold tracking-tight">Earnko</h2>
                 <p className="text-sm text-gray-300">Affiliate Platform</p>
@@ -77,7 +74,8 @@ export default function Footer() {
             </h3>
             <ul className="space-y-3">
               <FooterLink href="/about">About Us</FooterLink>
-              {/* <FooterLink href="/contact">Contact</FooterLink> */}
+              <FooterLink href="/contact">Contact</FooterLink>
+              {/* keep these paths consistent with actual routes */}
               <FooterLink href="/privacy">Privacy Policy</FooterLink>
               <FooterLink href="/terms">Terms & Conditions</FooterLink>
             </ul>
@@ -89,8 +87,11 @@ export default function Footer() {
               Support
             </h3>
             <div className="space-y-4">
-              <ContactItem icon={<Mail className="w-4 h-4" />} text="officialearnko@gmail.com" />
+              <ContactItem icon={<Mail className="w-4 h-4" />} text={CONTACT_EMAIL} />
               <ContactItem icon={<MapPin className="w-4 h-4" />} text="Mumbai, India" />
+            </div>
+            <div className="text-xs text-gray-400">
+              Support is available via email only.
             </div>
           </div>
         </div>
@@ -114,12 +115,10 @@ export default function Footer() {
       <div className="bg-white/5 backdrop-blur-sm border-t border-white/10">
         <div className="max-w-7xl mx-auto px-6 py-6">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-            {/* Copyright */}
             <div className="text-gray-300 text-sm text-center md:text-left">
               © {currentYear} Earnko. All rights reserved.
             </div>
 
-            {/* Legal Links */}
             <div className="flex items-center gap-6 text-sm">
               <Link href="/privacy" className="text-cyan-300 hover:text-white transition-colors">
                 Privacy Policy
@@ -127,9 +126,6 @@ export default function Footer() {
               <Link href="/terms" className="text-cyan-300 hover:text-white transition-colors">
                 Terms
               </Link>
-              {/* <Link href="/cookies" className="text-cyan-300 hover:text-white transition-colors">
-                Cookies
-              </Link> */}
             </div>
           </div>
         </div>
@@ -167,12 +163,15 @@ function SocialLink({ href, label, children }) {
 }
 
 function ContactItem({ icon, text }) {
+  const isEmail = String(text).includes('@');
   return (
     <div className="flex items-center gap-3 text-gray-300 hover:text-white transition-colors">
-      <div className="w-5 h-5 text-white/90">
-        {icon}
-      </div>
-      <span className="text-sm">{text}</span>
+      <div className="w-5 h-5 text-white/90">{icon}</div>
+      {isEmail ? (
+        <a className="text-sm hover:underline" href={`mailto:${text}`}>{text}</a>
+      ) : (
+        <span className="text-sm">{text}</span>
+      )}
     </div>
   );
 }

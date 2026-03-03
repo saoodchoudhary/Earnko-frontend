@@ -86,7 +86,7 @@ export default function HomePage() {
         ) : (
           <div>
           <HomeMarketing />
-      <Footer />
+           <Footer />
           </div>
         )}
       </div>

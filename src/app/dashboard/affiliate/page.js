@@ -54,6 +54,11 @@ export default function AffiliateToolsPage() {
   };
 
   const toastApiError = (res, data) => {
+    // inside toastApiError
+if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
+  toast.error('Store not detected for this URL. Please fix store baseUrl/trackingUrl in admin.');
+  return;
+}
     if (res?.status === 409 && data?.code === 'campaign_approval_required') {
       toast.error('Approval required');
       return;
@@ -72,7 +77,7 @@ export default function AffiliateToolsPage() {
       const res = await fetch(`${base}/api/affiliate/link-from-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
-        body: JSON.stringify({ url: singleUrl.trim() })
+        body: JSON.stringify({ url: singleUrl.trim() }) // storeId not sent (Option A backend infers)
       });
       const data = await safeJson(res);
       if (!res.ok) { toastApiError(res, data); return; }
@@ -83,7 +88,6 @@ export default function AffiliateToolsPage() {
       const payload = {
         inputUrl: singleUrl.trim(),
         link,
-        // prefer short/share url if backend provides it
         shareUrl: shareUrlFromApi || link,
         subid: data?.data?.subid || null,
         status: 'ok'
@@ -111,7 +115,7 @@ export default function AffiliateToolsPage() {
       const res = await fetch(`${base}/api/affiliate/link-from-url/bulk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
-        body: JSON.stringify({ urls })
+        body: JSON.stringify({ urls }) // storeId not sent (Option A backend infers per-url)
       });
       const data = await safeJson(res);
       if (!res.ok) { toastApiError(res, data); return; }
@@ -233,6 +237,7 @@ export default function AffiliateToolsPage() {
 
         {isMulti && (
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+            {/* ...same as your existing multi UI... */}
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -354,7 +359,7 @@ function ResultRow({ title, value, canCopy, canOpen, emphasis, compact = false }
           {canCopy && (
             <button
               onClick={async () => {
-                try { await navigator.clipboard.writeText(value); toast.success('Copied'); }
+                try { await navigator.clipboard.writeText(value); window?.toast ? window.toast.success('Copied') : toast.success('Copied'); }
                 catch { toast.error('Copy failed'); }
               }}
               className="px-2 py-1.5 rounded-md hover:bg-white border border-gray-300 text-gray-700 text-xs flex items-center gap-1"

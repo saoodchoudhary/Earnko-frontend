@@ -4,21 +4,21 @@ import { useState, useRef } from 'react';
 import { Store, Globe, Percent, Clock, Shield, Link as LinkIcon, Save, X, Image as ImageIcon, Trash2 } from 'lucide-react';
 
 const networks = [
-  { value: 'manual', label: 'Manual', icon: '👨‍💼' },
   { value: 'cuelinks', label: 'Cuelinks', icon: '🔗' },
-
-  // Added:
   { value: 'trackier', label: 'VCommission', icon: '📈' },
   { value: 'extrape', label: 'ExtraPe', icon: '🧩' },
+  { value: 'realcash', label: 'RealCash', icon: '💰' },
 
   // Existing:
   { value: 'custom', label: 'Custom', icon: '⚙️' },
 ];
 
+const NETWORK_SET = new Set(networks.map(n => n.value));
+
 export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
   const [form, setForm] = useState({
     name: initial?.name || '',
-    affiliateNetwork: initial?.affiliateNetwork || 'manual',
+    affiliateNetwork: initial?.affiliateNetwork || 'cuelinks',
     commissionRate: initial?.commissionRate ?? 0,
     commissionType: initial?.commissionType || 'percentage',
     maxCommission: initial?.maxCommission ?? '',
@@ -37,10 +37,19 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
 
   const submit = (e) => {
     e.preventDefault();
+
     if (!form.name.trim()) {
       alert('Store name is required');
       return;
     }
+
+    // ✅ NEW: affiliateNetwork required + allowlist
+    const net = String(form.affiliateNetwork || '').trim();
+    if (!net || !NETWORK_SET.has(net)) {
+      alert('Please select an affiliate network');
+      return;
+    }
+
     if (!form.baseUrl.trim() || !/^https?:\/\//i.test(form.baseUrl.trim())) {
       alert('Please enter a valid base URL starting with http/https');
       return;
@@ -48,6 +57,7 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
 
     const payload = {
       ...form,
+      affiliateNetwork: net,
       commissionRate: Number(form.commissionRate || 0),
       maxCommission: form.maxCommission === '' ? null : Number(form.maxCommission),
       cookieDuration: Number(form.cookieDuration || 30),
@@ -161,7 +171,7 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Affiliate Network
+                Affiliate Network <span className="text-red-600">*</span>
               </label>
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                 {networks.map(n => (
@@ -180,6 +190,9 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
                   </button>
                 ))}
               </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Network is required. Links will be generated via the selected network for this store.
+              </p>
             </div>
           </div>
 

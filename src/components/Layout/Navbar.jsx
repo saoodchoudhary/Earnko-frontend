@@ -143,6 +143,7 @@ export default function Navbar() {
     // { href: '/offers', label: 'Top Offers', icon: <Gift className="w-4 h-4" />, active: pathname.startsWith('/offers') },
     { href: '/stores', label: 'Stores', icon: <Store className="w-4 h-4" />, active: pathname.startsWith('/stores') },
     { href: '/products', label: 'Products', icon: <Sparkles className="w-4 h-4" />, active: pathname.startsWith('/products') },
+    { href: '/contact', label: 'Contact Us', icon: <CircleQuestionMark className="w-4 h-4" />, active: pathname.startsWith('/contact') },
   ];
 
   const userMenu = [
@@ -151,6 +152,7 @@ export default function Navbar() {
     { href: '/dashboard/analytics', label: 'Analytics', icon: <BarChart3 className="w-4 h-4" /> },
     { href: '/dashboard/wallet', label: 'My Wallet', icon: <CreditCard className="w-4 h-4" /> },
     { href: '/dashboard/support', label: "Help & Support", icon: <CircleQuestionMark className='w-4 h-4' /> },
+    { href: '/contact', label: 'Contact Us', icon: <CircleQuestionMark className='w-4 h-4' /> },
     { href: '/dashboard/settings', label: 'Settings', icon: <Settings className="w-4 h-4" /> },
   ];
 

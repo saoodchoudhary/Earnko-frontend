@@ -97,7 +97,7 @@ export default function AboutPage() {
           <p className="text-gray-700">
             We’d love to hear from you. For support or partnership inquiries, email us at
             {' '}
-            <a className="text-blue-600 font-medium" href="mailto:officialearnko@gmail.com">officialearnko@gmail.com</a>.
+            <a className="text-blue-600 font-medium" href="mailto:contact@earnko.com">contact@earnko.com</a>.
           </p>
         </div>
       </div>
