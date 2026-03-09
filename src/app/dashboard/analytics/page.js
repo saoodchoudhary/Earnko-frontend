@@ -8,20 +8,30 @@ import {
 import {
   BarChart3, DollarSign,
   Download, RefreshCw,
-  Link as LinkIcon, Copy, ExternalLink, Shield
+  Link as LinkIcon, Copy, ExternalLink, Shield, CalendarRange, Check
 } from 'lucide-react'
+
+/**
+ * Helpers: safer date handling for date inputs (YYYY-MM-DD)
+ * We build UTC boundaries to avoid timezone off-by-one issues.
+ */
+function toDateInputValue(d) {
+  if (!d) return ''
+  const x = new Date(d)
+  const yyyy = x.getFullYear()
+  const mm = String(x.getMonth() + 1).padStart(2, '0')
+  const dd = String(x.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function todayInput() {
+  return toDateInputValue(new Date())
+}
 
 function startOfMonth(d = new Date()) {
   const x = new Date(d)
   x.setDate(1)
   x.setHours(0, 0, 0, 0)
-  return x
-}
-
-function endOfMonth(d = new Date()) {
-  const x = new Date(d)
-  x.setMonth(x.getMonth() + 1, 0) // last day of month
-  x.setHours(23, 59, 59, 999)
   return x
 }
 
@@ -34,36 +44,50 @@ function startOfLastMonth() {
 
 function endOfLastMonth() {
   const now = new Date()
-  const x = new Date(now.getFullYear(), now.getMonth(), 0) // last day prev month
+  const x = new Date(now.getFullYear(), now.getMonth(), 0)
   x.setHours(23, 59, 59, 999)
   return x
 }
 
-function toDateInputValue(d) {
-  if (!d) return ''
-  const x = new Date(d)
-  const yyyy = x.getFullYear()
-  const mm = String(x.getMonth() + 1).padStart(2, '0')
-  const dd = String(x.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
+// Build UTC range from YYYY-MM-DD input
+function utcRangeFromInputs(fromStr, toStr) {
+  if (!fromStr || !toStr) return null
+
+  const [fy, fm, fd] = fromStr.split('-').map(Number)
+  const [ty, tm, td] = toStr.split('-').map(Number)
+
+  if (![fy, fm, fd, ty, tm, td].every(Number.isFinite)) return null
+
+  // UTC start/end (inclusive)
+  const from = new Date(Date.UTC(fy, fm - 1, fd, 0, 0, 0, 0))
+  const to = new Date(Date.UTC(ty, tm - 1, td, 23, 59, 59, 999))
+
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null
+  if (from.getTime() > to.getTime()) return null
+
+  return { from, to }
 }
 
-function daysBetweenInclusive(from, to) {
-  const a = new Date(from)
-  const b = new Date(to)
-  a.setHours(0, 0, 0, 0)
-  b.setHours(0, 0, 0, 0)
-  const ms = b.getTime() - a.getTime()
-  return Math.floor(ms / (1000 * 60 * 60 * 24)) + 1
+function daysBetweenInclusiveUTC(from, to) {
+  // from and to are Date in UTC boundaries
+  const a = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate())
+  const b = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate())
+  return Math.floor((b - a) / (1000 * 60 * 60 * 24)) + 1
 }
 
 export default function UserAnalyticsPage() {
-  // selection modes
   // 'current_month' | 'last_month' | 'custom'
   const [mode, setMode] = useState('current_month')
 
+  // Custom inputs (string for date input)
   const [customFrom, setCustomFrom] = useState(toDateInputValue(startOfMonth()))
   const [customTo, setCustomTo] = useState(toDateInputValue(new Date()))
+
+  // Applied custom range (so it doesn't refetch on every change)
+  const [appliedCustom, setAppliedCustom] = useState(() => ({
+    from: toDateInputValue(startOfMonth()),
+    to: toDateInputValue(new Date()),
+  }))
 
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -95,9 +119,19 @@ export default function UserAnalyticsPage() {
     return { success: false, message: txt }
   }
 
+  const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`
+
+  const copyToClipboard = async (text, msg = 'Copied') => {
+    try { await navigator.clipboard.writeText(text); toast.success(msg) }
+    catch { toast.error('Failed to copy') }
+  }
+
+  const viewLinkPerformance = () => {
+    if (!linkPerformanceRef.current) return
+    linkPerformanceRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   function buildAnalyticsQuery() {
-    // For month presets: use from/to for exact month windows
-    // For custom: validate max 90 days
     const params = new URLSearchParams()
 
     if (mode === 'current_month') {
@@ -112,33 +146,23 @@ export default function UserAnalyticsPage() {
       return params
     }
 
-    // custom
-    if (!customFrom || !customTo) return params
+    // custom uses appliedCustom (stable)
+    const r = utcRangeFromInputs(appliedCustom.from, appliedCustom.to)
+    if (!r) return params
 
-    const from = new Date(customFrom)
-    const to = new Date(customTo)
-    from.setHours(0, 0, 0, 0)
-    to.setHours(23, 59, 59, 999)
+    // max 90 days check (safe)
+    const days = daysBetweenInclusiveUTC(r.from, r.to)
+    if (days > 90) return params
 
-    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return params
-    if (from.getTime() > to.getTime()) return params
-
-    const days = daysBetweenInclusive(from, to)
-    if (days > 90) {
-      // We'll still build params but show toast; request should be blocked earlier too
-      params.set('from', from.toISOString())
-      params.set('to', to.toISOString())
-      return params
-    }
-
-    params.set('from', from.toISOString())
-    params.set('to', to.toISOString())
+    params.set('from', r.from.toISOString())
+    params.set('to', r.to.toISOString())
     return params
   }
 
   const loadAnalytics = async (signal, showLoading = true) => {
     try {
       if (showLoading) setLoading(true)
+
       const token = getToken()
       if (!base || !token) {
         setSummary({ clicksTotal: 0, conversionsTotal: 0, commissionTotal: 0, pendingAmount: 0, approvedAmount: 0 })
@@ -146,21 +170,14 @@ export default function UserAnalyticsPage() {
         return
       }
 
-      // custom validations
+      // block invalid custom applied range
       if (mode === 'custom') {
-        if (!customFrom || !customTo) {
-          toast.error('Please select From and To dates')
+        const r = utcRangeFromInputs(appliedCustom.from, appliedCustom.to)
+        if (!r) {
           setDaily([])
           return
         }
-        const from = new Date(customFrom)
-        const to = new Date(customTo)
-        if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from.getTime() > to.getTime()) {
-          toast.error('Invalid date range')
-          setDaily([])
-          return
-        }
-        const days = daysBetweenInclusive(from, to)
+        const days = daysBetweenInclusiveUTC(r.from, r.to)
         if (days > 90) {
           toast.error('Custom range can be maximum 90 days')
           setDaily([])
@@ -169,10 +186,17 @@ export default function UserAnalyticsPage() {
       }
 
       const qs = buildAnalyticsQuery()
+      if (!qs.get('from') || !qs.get('to')) {
+        // avoid hitting API with empty query
+        setDaily([])
+        return
+      }
+
       const res = await fetch(`${base}/api/user/analytics?${qs.toString()}`, {
         signal,
         headers: { Authorization: `Bearer ${token}` }
       })
+
       const js = await safeJson(res)
       if (!res.ok) throw new Error(js?.message || `Failed to load analytics (HTTP ${res.status})`)
 
@@ -186,7 +210,7 @@ export default function UserAnalyticsPage() {
       })
       setDaily(Array.isArray(data?.daily) ? data.daily : [])
     } catch (err) {
-      if (err.name !== 'AbortError') toast.error(err.message || 'Error loading analytics')
+      if (err?.name !== 'AbortError') toast.error(err?.message || 'Error loading analytics')
     } finally {
       if (showLoading) setLoading(false)
       setRefreshing(false)
@@ -214,28 +238,36 @@ export default function UserAnalyticsPage() {
       const list = js?.data?.items || []
       setLinks(Array.isArray(list) ? list : [])
     } catch (err) {
-      if (err.name !== 'AbortError') toast.error('Error loading links')
+      if (err?.name !== 'AbortError') toast.error('Error loading links')
       setLinks([])
     } finally {
       setLinksLoading(false)
     }
   }
 
+  // Auto-fix customTo when customFrom > customTo (UX)
+  useEffect(() => {
+    if (mode !== 'custom') return
+    if (!customFrom || !customTo) return
+    if (customFrom > customTo) setCustomTo(customFrom)
+  }, [mode, customFrom, customTo])
+
+  // Fetch when mode changes or applied custom changes (not on every date input change)
   useEffect(() => {
     const controller = new AbortController()
     loadAnalytics(controller.signal)
     loadLinks(controller.signal)
     return () => controller.abort()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, customFrom, customTo])
+  }, [mode, appliedCustom.from, appliedCustom.to])
 
   const chartData = useMemo(() => Array.isArray(daily) ? daily : [], [daily])
 
   const downloadReport = () => {
     const report = {
       periodMode: mode,
-      customFrom: mode === 'custom' ? customFrom : null,
-      customTo: mode === 'custom' ? customTo : null,
+      customFrom: mode === 'custom' ? appliedCustom.from : null,
+      customTo: mode === 'custom' ? appliedCustom.to : null,
       generatedAt: new Date().toISOString(),
       summary,
       daily,
@@ -257,17 +289,27 @@ export default function UserAnalyticsPage() {
     loadLinks(controller.signal)
   }
 
-  const fmtINR = (n) => `₹${Number(n || 0).toLocaleString()}`
-
-  const copyToClipboard = async (text, msg = 'Copied') => {
-    try { await navigator.clipboard.writeText(text); toast.success(msg) }
-    catch { toast.error('Failed to copy') }
+  const applyCustomRange = () => {
+    const r = utcRangeFromInputs(customFrom, customTo)
+    if (!r) {
+      toast.error('Invalid date range')
+      return
+    }
+    const days = daysBetweenInclusiveUTC(r.from, r.to)
+    if (days > 90) {
+      toast.error('Custom range can be maximum 90 days')
+      return
+    }
+    setAppliedCustom({ from: customFrom, to: customTo })
+    toast.success('Time range applied')
   }
 
-  const viewLinkPerformance = () => {
-    if (!linkPerformanceRef.current) return
-    linkPerformanceRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+  const customDaysText = useMemo(() => {
+    const r = utcRangeFromInputs(customFrom, customTo)
+    if (!r) return ''
+    const days = daysBetweenInclusiveUTC(r.from, r.to)
+    return `${days} day(s)`
+  }, [customFrom, customTo])
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
@@ -304,7 +346,6 @@ export default function UserAnalyticsPage() {
                 </button>
               </div>
 
-              {/* NEW: View link performance */}
               <button
                 onClick={viewLinkPerformance}
                 className="px-4 py-2 bg-white/20 rounded-xl hover:bg-white/30 transition-all flex items-center gap-2"
@@ -317,45 +358,38 @@ export default function UserAnalyticsPage() {
         </div>
       </section>
 
-      {/* Main Content */}
+      {/* Main */}
       <div className="container mx-auto px-4 py-6">
         <div className="grid xl:grid-cols-3 gap-6">
-          {/* Left Column */}
+          {/* Left */}
           <div className="xl:col-span-2 space-y-6">
             {/* Filters */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6">
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex flex-col gap-4">
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">Select time range</h2>
-                  <p className="text-gray-600 text-sm mt-1">Choose Current Month, Last Month, or Custom dates (max 90 days)</p>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                      <CalendarRange className="w-5 h-5 text-blue-600" />
+                      Select time range
+                    </h2>
+                    <p className="text-gray-600 text-sm mt-1">Current Month, Last Month, or Custom (max 90 days)</p>
+                  </div>
+
+                  {mode === 'custom' && (
+                    <div className="text-xs text-gray-500 text-right">
+                      {customDaysText ? `Selected: ${customDaysText}` : 'Select dates'}
+                      <div className="mt-1">
+                        Applied: <span className="font-semibold">{appliedCustom.from}</span> → <span className="font-semibold">{appliedCustom.to}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-                  <div className="inline-flex rounded-xl bg-gray-100 p-1 w-fit">
-                    <button
-                      onClick={() => setMode('current_month')}
-                      className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                        mode === 'current_month' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                    >
-                      Current Month
-                    </button>
-                    <button
-                      onClick={() => setMode('last_month')}
-                      className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                        mode === 'last_month' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                    >
-                      Last Month
-                    </button>
-                    <button
-                      onClick={() => setMode('custom')}
-                      className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                        mode === 'custom' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                    >
-                      Custom (Calendar)
-                    </button>
+                  <div className="inline-flex rounded-2xl bg-gray-100 p-1 w-fit">
+                    <Chip active={mode === 'current_month'} onClick={() => setMode('current_month')}>Current Month</Chip>
+                    <Chip active={mode === 'last_month'} onClick={() => setMode('last_month')}>Last Month</Chip>
+                    <Chip active={mode === 'custom'} onClick={() => setMode('custom')}>Custom</Chip>
                   </div>
 
                   {mode === 'custom' && (
@@ -365,8 +399,9 @@ export default function UserAnalyticsPage() {
                         <input
                           type="date"
                           value={customFrom}
+                          max={todayInput()}
                           onChange={(e) => setCustomFrom(e.target.value)}
-                          className="px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                          className="px-3 py-2 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
                         />
                       </div>
                       <div>
@@ -374,10 +409,22 @@ export default function UserAnalyticsPage() {
                         <input
                           type="date"
                           value={customTo}
+                          min={customFrom || undefined}
+                          max={todayInput()}
                           onChange={(e) => setCustomTo(e.target.value)}
-                          className="px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                          className="px-3 py-2 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
                         />
                       </div>
+
+                      <button
+                        onClick={applyCustomRange}
+                        className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold rounded-xl hover:shadow-lg transition-all flex items-center gap-2"
+                        title="Apply custom range"
+                      >
+                        <Check className="w-4 h-4" />
+                        Apply
+                      </button>
+
                       <div className="text-xs text-gray-500">
                         Max 90 days
                       </div>
@@ -389,28 +436,13 @@ export default function UserAnalyticsPage() {
 
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <StatCard
-                title="Total Commission"
-                value={fmtINR(summary.commissionTotal || 0)}
-                icon={<DollarSign className="w-5 h-5" />}
-                color="from-purple-500 to-pink-600"
-              />
-              <StatCard
-                title="Pending Amount"
-                value={fmtINR(summary.pendingAmount || 0)}
-                icon={<ClockIcon className="w-5 h-5" />}
-                color="from-amber-500 to-orange-600"
-              />
-              <StatCard
-                title="Approved Amount"
-                value={fmtINR(summary.approvedAmount || 0)}
-                icon={<CheckCircle className="w-5 h-5" />}
-                color="from-indigo-500 to-purple-600"
-              />
+              <StatCard title="Total Commission" value={fmtINR(summary.commissionTotal || 0)} icon={<DollarSign className="w-5 h-5" />} color="from-purple-500 to-pink-600" />
+              <StatCard title="Pending Amount" value={fmtINR(summary.pendingAmount || 0)} icon={<ClockIcon className="w-5 h-5" />} color="from-amber-500 to-orange-600" />
+              <StatCard title="Approved Amount" value={fmtINR(summary.approvedAmount || 0)} icon={<CheckCircle className="w-5 h-5" />} color="from-indigo-500 to-purple-600" />
             </div>
 
             {/* Chart */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6">
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">Performance Trends</h3>
@@ -448,7 +480,7 @@ export default function UserAnalyticsPage() {
                       <XAxis dataKey="date" stroke="#9ca3af" tick={{ fontSize: 12 }} />
                       <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} />
                       <Tooltip
-                        contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', backgroundColor: 'white' }}
+                        contentStyle={{ borderRadius: '12px', border: '1px solid #e5e7eb', backgroundColor: 'white' }}
                         formatter={(value, name) => {
                           if (name === 'commission') return [`₹${Number(value).toFixed(0)}`, 'Commission']
                           if (name === 'clicks') return [Number(value).toFixed(0), 'Clicks']
@@ -467,7 +499,7 @@ export default function UserAnalyticsPage() {
             </div>
 
             {/* Link Performance */}
-            <div ref={linkPerformanceRef} className="bg-white border border-gray-200 rounded-xl p-6">
+            <div ref={linkPerformanceRef} className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -493,8 +525,8 @@ export default function UserAnalyticsPage() {
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {links.map((it, idx) => (
-                    <div key={it.subid || idx} className="border border-gray-200 rounded-xl p-4 hover:shadow-sm transition-shadow">
-                      <div className="flex items-start justify-between">
+                    <div key={it.subid || idx} className="border border-gray-200 rounded-2xl p-4 hover:shadow-sm transition-shadow bg-gradient-to-b from-white to-gray-50">
+                      <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="text-xs text-gray-500">Generated Link</div>
                           <div className="text-sm text-gray-700 break-all line-clamp-2 sm:line-clamp-1">
@@ -532,7 +564,7 @@ export default function UserAnalyticsPage() {
                         <div className="text-center">
                           <div className="text-[11px] text-gray-500">Clicks</div>
                           <div className="text-sm font-bold text-gray-900">
-                            {Number(it.clicks || 0).toLocaleString()}
+                            {Number(it.clicks || 0).toLocaleString('en-IN')}
                           </div>
                         </div>
 
@@ -555,28 +587,36 @@ export default function UserAnalyticsPage() {
             </div>
           </div>
 
-          {/* Right Column */}
+          {/* Right */}
           <div className="space-y-6">
-            <div className="bg-white border border-gray-200 rounded-xl p-6">
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <h3 className="font-bold text-gray-900 mb-4">Quick Actions</h3>
               <div className="space-y-3">
                 <button
                   onClick={downloadReport}
-                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold rounded-xl hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-semibold rounded-2xl hover:shadow-lg transition-all flex items-center justify-center gap-2"
                 >
                   <Download className="w-4 h-4" />
                   Download Report
                 </button>
                 <button
                   onClick={refresh}
-                  className="w-full py-3 border border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                  className="w-full py-3 border border-gray-300 text-gray-700 font-medium rounded-2xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
                 >
                   <RefreshCw className="w-4 h-4" />
                   Refresh Data
                 </button>
               </div>
+
+              {mode === 'custom' && (
+                <div className="mt-4 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-xl p-3">
+                  Custom range must be within <span className="font-semibold">90 days</span>.
+                  Use <span className="font-semibold">Apply</span> to fetch new data.
+                </div>
+              )}
             </div>
           </div>
+
         </div>
       </div>
 
@@ -588,15 +628,28 @@ export default function UserAnalyticsPage() {
   )
 }
 
+function Chip({ active, onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+        active ? 'bg-white shadow-sm text-blue-700' : 'text-gray-600 hover:text-gray-900'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
 function StatCard({ title, value, icon, color }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-all">
+    <div className="bg-white border border-gray-200 rounded-2xl p-4 hover:shadow-md transition-all shadow-sm">
       <div className="flex items-center justify-between mb-3">
-        <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${color} flex items-center justify-center text-white`}>
+        <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center text-white`}>
           {icon}
         </div>
       </div>
-      <div className="text-xl font-bold text-gray-900">{typeof value === 'number' ? value.toLocaleString() : value}</div>
+      <div className="text-xl font-extrabold text-gray-900">{value}</div>
       <div className="text-sm text-gray-500 mt-1">{title}</div>
     </div>
   )

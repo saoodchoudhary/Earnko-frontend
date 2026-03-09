@@ -228,7 +228,6 @@ export default function StoreForm({ initial, onSubmit, submitting, onCancel }) {
                   type="number"
                   step="0.01"
                   min="0"
-                  max="100"
                   value={form.commissionRate}
                   onChange={(e) => change('commissionRate', e.target.value)}
                   required

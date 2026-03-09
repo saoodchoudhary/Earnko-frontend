@@ -20,6 +20,40 @@ function normalizeList(obj) {
   return Array.isArray(candidate) ? candidate : [];
 }
 
+function toYMD(d) {
+  // Always return YYYY-MM-DD in local time (good for labels)
+  const x = new Date(d);
+  if (Number.isNaN(x.getTime())) return '';
+  const yyyy = x.getFullYear();
+  const mm = String(x.getMonth() + 1).padStart(2, '0');
+  const dd = String(x.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function parseAnyDateToYMD(input) {
+  if (!input) return '';
+  if (typeof input === 'string') {
+    // if already YMD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
+  }
+  const d = new Date(input);
+  if (Number.isNaN(d.getTime())) return '';
+  return toYMD(d);
+}
+
+function lastNDaysSeries(n = 30) {
+  const out = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    out.push(toYMD(d));
+  }
+  return out;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
 
@@ -157,6 +191,7 @@ export default function DashboardPage() {
         if (!base) { toast.error('Backend URL not configured'); return; }
         const token = getToken();
         setAnalyticsLoading(true);
+
         const r = await fetch(`${base}/api/user/analytics?range=30d`, {
           signal: controller.signal,
           headers: { Authorization: token ? `Bearer ${token}` : '' }
@@ -167,8 +202,10 @@ export default function DashboardPage() {
           toast.error(msg);
           throw new Error(msg);
         }
+
         const summary = d?.data?.summary || {};
         const daily = Array.isArray(d?.data?.daily) ? d.data.daily : [];
+
         setAnalyticsSummary({
           clicksTotal: Number(summary.clicksTotal || 0),
           conversionsTotal: Number(summary.conversionsTotal || 0),
@@ -176,6 +213,8 @@ export default function DashboardPage() {
           pendingAmount: Number(summary.pendingAmount || 0),
           approvedAmount: Number(summary.approvedAmount || 0),
         });
+
+        // keep raw, we'll normalize later for chart
         setAnalyticsDaily(daily);
       } catch (err) {
         setAnalyticsSummary({
@@ -190,7 +229,7 @@ export default function DashboardPage() {
     return () => controller.abort();
   }, [base, analyticsRefresh]);
 
-  // Load today's analytics (real clicks, conversions, commission)
+  // Load today's analytics
   useEffect(() => {
     const controller = new AbortController();
     async function loadAnalytics1d() {
@@ -202,7 +241,8 @@ export default function DashboardPage() {
           headers: { Authorization: token ? `Bearer ${token}` : '' }
         });
         const d = await safeJson(r);
-        if (!r.ok) return; // don't toast here, 30d call already toasted if backend down
+        if (!r.ok) return;
+
         const daily = Array.isArray(d?.data?.daily) ? d.data.daily : [];
         const todayAgg = daily.reduce(
           (acc, cur) => ({
@@ -212,6 +252,7 @@ export default function DashboardPage() {
           }),
           { clicks: 0, conversions: 0, commission: 0 }
         );
+
         setTodayClicks(todayAgg.clicks);
         setTodayConversions(todayAgg.conversions);
         setTodayCommission(todayAgg.commission);
@@ -223,7 +264,7 @@ export default function DashboardPage() {
     return () => controller.abort();
   }, [base, analyticsRefresh]);
 
-  // Offers preview (FIXED: read from data.offers per backend)
+  // Offers preview
   useEffect(() => {
     const controller = new AbortController();
     async function loadOffers() {
@@ -244,7 +285,6 @@ export default function DashboardPage() {
           : Array.isArray(d?.data?.items)
           ? d.data.items
           : [];
-        // Sort by rate desc then updatedAt desc for nicer display
         const sorted = [...list].sort((a, b) => {
           const rd = (b.rate || 0) - (a.rate || 0);
           if (rd !== 0) return rd;
@@ -274,7 +314,6 @@ export default function DashboardPage() {
     };
   }, [wallet, analyticsSummary]);
 
-  // Earnings breakdown metrics (requested)
   const earningsBreakdown = useMemo(() => {
     const totalEarnings = totals.confirmedCashback + totals.pendingCashback + totals.totalWithdrawn;
     return {
@@ -293,20 +332,52 @@ export default function DashboardPage() {
 
   const goGenerate = () => router.push('/dashboard/affiliate');
 
-  // Prepare bar chart from analyticsDaily
-  const bars = useMemo(() => {
-    const series = Array.isArray(analyticsDaily) ? analyticsDaily : [];
-    const maxClicks = series.reduce((m, d) => Math.max(m, Number(d.clicks || 0)), 0) || 1;
-    return series.map(d => {
-      const clicks = Number(d.clicks || 0);
-      const height = Math.max(6, Math.round((clicks / maxClicks) * 90)); // 6..90%
-      return { date: d.date, clicks, height, conversions: Number(d.conversions || 0) };
+  /**
+   * ✅ FIXED: Build a stable 30-day series even if backend returns fewer points,
+   * and normalize date formats (ISO/Date/YMD).
+   */
+  const chartSeries = useMemo(() => {
+    const keys = lastNDaysSeries(30); // always 30 days
+    const map = new Map();
+
+    const raw = Array.isArray(analyticsDaily) ? analyticsDaily : [];
+    for (const row of raw) {
+      const ymd = parseAnyDateToYMD(row?.date || row?.day || row?.createdAt);
+      if (!ymd) continue;
+
+      const prev = map.get(ymd) || { clicks: 0, conversions: 0, commission: 0 };
+      map.set(ymd, {
+        clicks: prev.clicks + Number(row?.clicks || 0),
+        conversions: prev.conversions + Number(row?.conversions || 0),
+        commission: prev.commission + Number(row?.commission || 0),
+      });
+    }
+
+    return keys.map((ymd) => {
+      const v = map.get(ymd) || { clicks: 0, conversions: 0, commission: 0 };
+      return { date: ymd, ...v };
     });
   }, [analyticsDaily]);
 
+  const bars = useMemo(() => {
+    const series = Array.isArray(chartSeries) ? chartSeries : [];
+    const maxClicks = series.reduce((m, d) => Math.max(m, Number(d.clicks || 0)), 0) || 1;
+
+    return series.map(d => {
+      const clicks = Number(d.clicks || 0);
+      const h = Math.round((clicks / maxClicks) * 100);
+      return {
+        date: d.date,
+        clicks,
+        conversions: Number(d.conversions || 0),
+        heightPct: clicks === 0 ? 6 : Math.max(8, Math.min(100, h)), // better visual
+      };
+    });
+  }, [chartSeries]);
+
   const refreshAnalytics = () => setAnalyticsRefresh(v => v + 1);
 
-  const fmtINR = (n) => `₹${Number(n || 0).toLocaleString()}`;
+  const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
   const fmtPct = (n) => `${Number(n || 0).toFixed(1)}%`;
 
   return (
@@ -329,7 +400,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Quick actions */}
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={goGenerate}
@@ -342,7 +412,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Quick Actions Grid */}
           <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { icon: <CreditCard className="w-5 h-5" />, label: 'Withdraw', href: '/dashboard/withdraw', color: 'from-green-500 to-emerald-500' },
@@ -365,7 +434,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Earnings Summary Row (requested) */}
+      {/* Earnings Summary Row */}
       <section className="container mx-auto px-4 -mt-6">
         <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -380,39 +449,16 @@ export default function DashboardPage() {
       {/* Stats Overview */}
       <section className="container mx-auto px-4 mt-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <StatCard
-            title="Available Balance"
-            value={totals.availableBalance}
-            icon={<Wallet className="w-5 h-5" />}
-            color="from-blue-500 to-blue-600"
-          />
-          <StatCard
-            title="Confirmed Cashback"
-            value={totals.confirmedCashback}
-            icon={<CheckCircle className="w-5 h-5" />}
-            color="from-green-500 to-emerald-600"
-          />
-          <StatCard
-            title="Pending Cashback"
-            value={totals.pendingCashback}
-            icon={<Clock className="w-5 h-5" />}
-            color="from-amber-500 to-orange-600"
-          />
-          <StatCard
-            title="Referral Earnings"
-            value={totals.referralEarnings}
-            icon={<Users className="w-5 h-5" />}
-            color="from-purple-500 to-pink-600"
-          />
+          <StatCard title="Available Balance" value={totals.availableBalance} icon={<Wallet className="w-5 h-5" />} color="from-blue-500 to-blue-600" />
+          <StatCard title="Confirmed Cashback" value={totals.confirmedCashback} icon={<CheckCircle className="w-5 h-5" />} color="from-green-500 to-emerald-600" />
+          <StatCard title="Pending Cashback" value={totals.pendingCashback} icon={<Clock className="w-5 h-5" />} color="from-amber-500 to-orange-600" />
+          <StatCard title="Referral Earnings" value={totals.referralEarnings} icon={<Users className="w-5 h-5" />} color="from-purple-500 to-pink-600" />
         </div>
       </section>
 
-      {/* Main Content Grid */}
       <div className="container mx-auto px-4 py-8">
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* Left Column - Performance Overview */}
           <div className="lg:col-span-2 space-y-8">
-            {/* Performance Overview Card */}
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -433,57 +479,20 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Real-time Today Summary */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                <MiniStat
-                  label="Today's Clicks"
-                  value={todayClicks}
-                  icon={<Eye className="w-4 h-4" />}
-                  color="blue"
-                />
-                <MiniStat
-                  label="Today's Conversions"
-                  value={todayConversions}
-                  icon={<Target className="w-4 h-4" />}
-                  color="green"
-                />
-                <MiniStat
-                  label="Today's Earnings"
-                  value={fmtINR(todayCommission)}
-                  icon={<DollarSign className="w-4 h-4" />}
-                  color="purple"
-                />
-                <MiniStat
-                  label="Conversion Rate"
-                  value={fmtPct(todayClicks ? (todayConversions / todayClicks) * 100 : 0)}
-                  icon={<Target className="w-4 h-4" />}
-                  color="amber"
-                />
+                <MiniStat label="Today's Clicks" value={todayClicks} icon={<Eye className="w-4 h-4" />} color="blue" />
+                <MiniStat label="Today's Conversions" value={todayConversions} icon={<Target className="w-4 h-4" />} color="green" />
+                <MiniStat label="Today's Earnings" value={fmtINR(todayCommission)} icon={<DollarSign className="w-4 h-4" />} color="purple" />
+                <MiniStat label="Conversion Rate" value={fmtPct(todayClicks ? (todayConversions / todayClicks) * 100 : 0)} icon={<Target className="w-4 h-4" />} color="amber" />
               </div>
 
-              {/* 30-day Summary */}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
-                <MiniStat
-                  label="Total Clicks (30d)"
-                  value={totals.clicksTotal}
-                  icon={<Eye className="w-4 h-4" />}
-                  color="blue"
-                />
-                <MiniStat
-                  label="Conversions (30d)"
-                  value={totals.conversionsTotal}
-                  icon={<Target className="w-4 h-4" />}
-                  color="green"
-                />
-                <MiniStat
-                  label="Commission (30d)"
-                  value={fmtINR(totals.commissionTotal)}
-                  icon={<DollarSign className="w-4 h-4" />}
-                  color="purple"
-                />
+                <MiniStat label="Total Clicks (30d)" value={totals.clicksTotal} icon={<Eye className="w-4 h-4" />} color="blue" />
+                <MiniStat label="Conversions (30d)" value={totals.conversionsTotal} icon={<Target className="w-4 h-4" />} color="green" />
+                <MiniStat label="Commission (30d)" value={fmtINR(totals.commissionTotal)} icon={<DollarSign className="w-4 h-4" />} color="purple" />
               </div>
 
-              {/* Daily Activity Chart */}
+              {/* ✅ FIXED Graph */}
               <div className="mt-8">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-medium text-gray-900">Daily Click Activity</h3>
@@ -494,40 +503,51 @@ export default function DashboardPage() {
                 </div>
 
                 {analyticsLoading ? (
-                  <div className="h-40 bg-gray-100 rounded-xl animate-pulse"></div>
-                ) : bars.length === 0 ? (
-                  <div className="h-40 flex items-center justify-center border-2 border-dashed border-gray-300 rounded-xl">
+                  <div className="h-44 bg-gray-100 rounded-2xl animate-pulse"></div>
+                ) : !Array.isArray(bars) || bars.length === 0 ? (
+                  <div className="h-44 flex items-center justify-center border-2 border-dashed border-gray-300 rounded-2xl">
                     <div className="text-center">
                       <BarChart3 className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                       <p className="text-gray-600">No activity data available</p>
                     </div>
                   </div>
                 ) : (
-                  <div className="relative">
-                    <div className="h-40 flex items-end justify-between gap-1 px-2">
+                  <div className="rounded-2xl border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-3">
+                    <div className="h-36 flex items-end gap-1">
                       {bars.map((b, i) => (
-                        <div key={i} className="flex flex-col items-center" style={{ width: 'calc(100% / 30)' }}>
+                        <div key={b.date || i} className="flex-1 min-w-[6px] group relative">
                           <div
-                            className="w-full bg-gradient-to-t from-blue-500 to-cyan-400 rounded-t-lg transition-all duration-300 hover:opacity-90"
-                            style={{ height: `${b.height}%` }}
-                            title={`${b.clicks} clicks on ${b.date}`}
+                            className="w-full rounded-t-xl bg-gradient-to-t from-blue-600 to-cyan-400 transition-all duration-300 group-hover:opacity-90"
+                            style={{ height: `${b.heightPct}%` }}
                           />
-                          <div className="text-xs text-gray-500 mt-1">
-                            {i % 5 === 0 ? b.date.split('-')[2] : ''}
+                          {/* tooltip */}
+                          <div className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap bg-gray-900 text-white text-[11px] px-2 py-1 rounded-lg shadow-lg">
+                            {b.clicks} clicks • {b.date}
+                          </div>
+
+                          {/* x labels: every 5th */}
+                          <div className="mt-1 text-[10px] text-gray-500 text-center">
+                            {i % 5 === 0 ? b.date.slice(-2) : ''}
                           </div>
                         </div>
                       ))}
                     </div>
-                    <div className="mt-4 flex items-center gap-2 text-xs text-gray-500">
-                      <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-cyan-400 rounded-sm"></div>
-                      Click activity over 30 days
+
+                    <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-gradient-to-r from-blue-600 to-cyan-400 rounded-sm"></div>
+                        Click activity (last 30 days)
+                      </div>
+                      <div className="text-[11px]">
+                        Max clicks/day: <span className="font-semibold text-gray-700">{Math.max(...bars.map(x => x.clicks))}</span>
+                      </div>
                     </div>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Recent Links Card (mobile-optimized) */}
+            {/* Recent Links */}
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -537,10 +557,7 @@ export default function DashboardPage() {
                   </h2>
                   <p className="text-gray-600 text-sm mt-1">Your recently generated links</p>
                 </div>
-                <Link
-                  href="/dashboard/affiliate"
-                  className="text-blue-600 hover:text-blue-700 font-medium text-sm flex items-center gap-1"
-                >
+                <Link href="/dashboard/affiliate" className="text-blue-600 hover:text-blue-700 font-medium text-sm flex items-center gap-1">
                   Manage all
                   <ChevronRight className="w-4 h-4" />
                 </Link>
@@ -564,10 +581,7 @@ export default function DashboardPage() {
                   </div>
                 ) : (
                   recentLinks.map((link, index) => (
-                    <div
-                      key={link.subid || index}
-                      className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-all duration-300"
-                    >
+                    <div key={link.subid || index} className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-all duration-300">
                       <div className="flex sm:flex-row flex-col items-start sm:items-center justify-between gap-2 sm:gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -604,7 +618,7 @@ export default function DashboardPage() {
                         <div className="text-center">
                           <div className="text-[11px] text-gray-500">Earnings</div>
                           <div className="text-sm font-bold text-purple-600">
-                            ₹{Number(link.approvedCommissionSum || link.commission || 0).toLocaleString()}
+                            ₹{Number(link.approvedCommissionSum || link.commission || 0).toLocaleString('en-IN')}
                           </div>
                         </div>
                       </div>
@@ -615,9 +629,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Right Column - Sidebar */}
+          {/* Right Column */}
           <div className="space-y-8">
-            {/* Performance Summary Card */}
             <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-200 rounded-2xl p-6">
               <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-blue-600" />
@@ -626,11 +639,11 @@ export default function DashboardPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">Today's Clicks</span>
-                  <span className="font-bold text-gray-900">{Number(todayClicks).toLocaleString()}</span>
+                  <span className="font-bold text-gray-900">{Number(todayClicks).toLocaleString('en-IN')}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">Today's Conversions</span>
-                  <span className="font-bold text-gray-900">{Number(todayConversions).toLocaleString()}</span>
+                  <span className="font-bold text-gray-900">{Number(todayConversions).toLocaleString('en-IN')}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-600">Today's Earnings</span>
@@ -644,17 +657,13 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div className="mt-6 pt-4 border-t border-blue-200">
-                <Link
-                  href="/dashboard/analytics"
-                  className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center justify-center gap-1 group"
-                >
+                <Link href="/dashboard/analytics" className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center justify-center gap-1 group">
                   View Detailed Analytics
                   <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </Link>
               </div>
             </div>
 
-            {/* Featured Offers preview (from backend, FIXED) */}
             <div className="bg-white border border-gray-200 rounded-2xl p-6">
               <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <StoreIcon className="w-5 h-5 text-gray-600" />
@@ -701,7 +710,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Featured Deals Section */}
+      {/* Featured Deals */}
       <section className="container mx-auto px-4 pb-12">
         <div className="bg-gradient-to-r from-white to-gray-50 border border-gray-200 rounded-2xl p-6">
           <div className="flex items-center justify-between mb-6">
@@ -712,10 +721,7 @@ export default function DashboardPage() {
               </h2>
               <p className="text-gray-600 text-sm mt-1">High commission offers for you</p>
             </div>
-            <Link
-              href="/offers"
-              className="text-blue-600 hover:text-blue-700 font-medium text-sm flex items-center gap-1"
-            >
+            <Link href="/offers" className="text-blue-600 hover:text-blue-700 font-medium text-sm flex items-center gap-1">
               View all offers
               <ChevronRight className="w-4 h-4" />
             </Link>
@@ -755,10 +761,6 @@ export default function DashboardPage() {
                     {offer.description || 'High converting affiliate offer'}
                   </p>
 
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="text-xs text-gray-500">Commission</div>
-                  </div>
-
                   <div className="flex gap-2">
                     <button
                       onClick={() => router.push('/dashboard/affiliate')}
@@ -774,19 +776,6 @@ export default function DashboardPage() {
           )}
         </div>
       </section>
-
-      {/* Earnings Breakdown Section (separate section as requested)
-      <section className="container mx-auto px-4 pb-12">
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Earnings Breakdown</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <BreakdownTile label="Total Earnings" value={fmtINR(earningsBreakdown.totalEarnings)} color="text-blue-700" />
-            <BreakdownTile label="Redeemed Earnings" value={fmtINR(earningsBreakdown.redeemedEarnings)} color="text-green-700" />
-            <BreakdownTile label="Pending Amount" value={fmtINR(earningsBreakdown.pendingAmount)} color="text-amber-700" />
-            <BreakdownTile label="Available For Withdraw" value={fmtINR(earningsBreakdown.availableForWithdraw)} color="text-purple-700" />
-          </div>
-        </div>
-      </section> */}
 
       <StyleTag />
     </main>
@@ -810,7 +799,7 @@ function StatCard({ title, value, icon, color }) {
           {icon}
         </div>
       </div>
-      <div className="text-2xl font-bold text-gray-900">₹{Number(value || 0).toLocaleString()}</div>
+      <div className="text-2xl font-bold text-gray-900">₹{Number(value || 0).toLocaleString('en-IN')}</div>
       <div className="text-sm text-gray-500 mt-1">{title}</div>
     </div>
   );
@@ -832,14 +821,13 @@ function MiniStat({ label, value, icon, color }) {
         </div>
       </div>
       <div className="text-lg font-bold text-gray-900">
-        {typeof value === 'number' ? value.toLocaleString() : value}
+        {typeof value === 'number' ? value.toLocaleString('en-IN') : value}
       </div>
       <div className="text-xs text-gray-500 mt-1">{label}</div>
     </div>
   );
 }
 
-// Add this CSS for line clamping
 const styles = `
   .line-clamp-1 {
     overflow: hidden;
@@ -865,7 +853,6 @@ const styles = `
   }
 `;
 
-// Add the style tag
 const StyleTag = () => (
   <style dangerouslySetInnerHTML={{ __html: styles }} />
 );

@@ -6,14 +6,12 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useSelector, useDispatch } from 'react-redux'
 import { logout } from '@/store/slices/authSlice'
 import {
-  Grid, Link as LinkIcon, ShoppingBag, Wallet, Users,
-  CreditCard, Settings as SettingsIcon, LogOut, Menu, X, User as UserIcon,
-  TrendingUp, BarChart3, Bell, Search, Zap, Home,
-  ChevronRight, Award, DollarSign, ExternalLink,
-  PieChart, TrendingUp as TrendingIcon, Gift, Shield,
-  HelpCircle, MessageSquare, FileText, Calendar,
-  ChevronDown, Globe, Shield as ShieldIcon,
-  Target, Clock, Star, ArrowLeft, RefreshCw,
+  Grid, ShoppingBag, Wallet, Users,
+  CreditCard, Settings as SettingsIcon, LogOut, Menu, X,
+  TrendingUp, BarChart3, Bell, Zap,
+  ChevronRight, DollarSign, RefreshCw,
+  Target, ArrowLeft,
+  HelpCircle,
   HomeIcon
 } from 'lucide-react'
 
@@ -30,7 +28,6 @@ const navCategories = [
     items: [
       { key: 'affiliate', label: 'Create Link', href: '/dashboard/affiliate', icon: Zap, color: 'text-cyan-600', badge: 'New' },
       { key: 'stores', label: 'Stores', href: '/stores', icon: CreditCard, color: 'text-indigo-600', badge: null },
-      // { key: 'offers', label: 'Top Offers', href: '/dashboard/#', icon: Gift, color: 'text-amber-600', badge: 'Hot' },
       { key: 'refer', label: 'Refer & Earn', href: '/dashboard/referrals', icon: Users, color: 'text-pink-600', badge: null },
     ]
   },
@@ -129,9 +126,7 @@ export default function DashboardLayout({ children }) {
         })
         if (statsRes.ok) {
           const statsData = await safeJson(statsRes)
-          if (statsData?.data) {
-            setQuickStats(statsData.data)
-          }
+          if (statsData?.data) setQuickStats(statsData.data)
         }
 
         // Fetch today's clicks + conversions (real) from analytics daily series
@@ -151,7 +146,7 @@ export default function DashboardLayout({ children }) {
           setAnalyticsToday(today)
         }
 
-        // Fetch notifications count
+        // Fetch notifications unread count (keep as-is; if backend differs we can adjust)
         const notifCountRes = await fetch(`${base}/api/user/notifications/unread-count`, {
           headers: { Authorization: `Bearer ${token}` }
         })
@@ -242,9 +237,10 @@ export default function DashboardLayout({ children }) {
   const pendingCashback = walletData?.pendingCashback ?? displayUser?.wallet?.pendingCashback ?? 0
   const confirmedCashback = walletData?.confirmedCashback ?? displayUser?.wallet?.confirmedCashback ?? 0
   const referralEarnings = walletData?.referralEarnings ?? displayUser?.wallet?.referralEarnings ?? 0
+  const totalWithdrawn = walletData?.totalWithdrawn ?? displayUser?.wallet?.totalWithdrawn ?? 0
 
-  // Total earnings to show next to mobile notifications (confirmed + referral)
-  const totalEarnings = Number(confirmedCashback || 0) + Number(referralEarnings || 0)
+  // ✅ Lifetime Total Earnings (best definition)
+  const totalEarnings = Number(confirmedCashback || 0) + Number(referralEarnings || 0) + Number(totalWithdrawn || 0)
 
   const handleLogout = () => {
     try {
@@ -274,58 +270,49 @@ export default function DashboardLayout({ children }) {
     return `${baseClass} text-gray-600 hover:bg-gray-50 hover:text-gray-900`
   }
 
-  const quickActions = [
-    { icon: <Zap className="w-4 h-4" />, label: 'Generate Link', href: '/dashboard/affiliate', color: 'from-blue-500 to-cyan-500' },
-    { icon: <DollarSign className="w-4 h-4" />, label: 'Withdraw', href: '/dashboard/withdraw', color: 'from-green-500 to-emerald-500' },
-    { icon: <Gift className="w-4 h-4" />, label: 'Top Offers', href: '/offers', color: 'from-amber-500 to-orange-500' },
-    { icon: <TrendingIcon className="w-4 h-4" />, label: 'Analytics', href: '/dashboard/analytics', color: 'from-purple-500 to-pink-500' },
-  ]
-
-  // Header stats with real today's clicks and conversions
+  // ✅ Desktop header stats (add Total Earnings)
   const headerStats = [
-    { label: 'Today', value: `₹${Number(quickStats.todayEarnings || 0).toLocaleString()}`, change: null, icon: <DollarSign className="w-4 h-4" />, color: 'text-green-600' },
-    { label: 'Clicks', value: Number(analyticsToday.clicks || 0).toLocaleString(), change: null, icon: <TrendingIcon className="w-4 h-4" />, color: 'text-blue-600' },
-    { label: 'Conversions', value: Number(analyticsToday.conversions || 0).toLocaleString(), change: null, icon: <Target className="w-4 h-4" />, color: 'text-purple-600' },
-    { label: 'Active', value: Number(quickStats.activeCampaigns || 0).toLocaleString(), change: null, icon: <Zap className="w-4 h-4" />, color: 'text-amber-600' },
+    { label: 'Total', value: formatINR(totalEarnings) },
+    { label: 'Today', value: `₹${Number(quickStats.todayEarnings || 0).toLocaleString('en-IN')}` },
+    { label: 'Clicks', value: Number(analyticsToday.clicks || 0).toLocaleString('en-IN') },
+    { label: 'Conversions', value: Number(analyticsToday.conversions || 0).toLocaleString('en-IN') },
   ]
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Mobile Header - with back button and earnings next to notifications */}
+      {/* Mobile Header - replace earning pill with Total Earnings pill */}
       <header className="lg:hidden bg-white border-b shadow-sm sticky top-0 z-40">
         <div className="px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               {pathname !== '/dashboard' ? (
-                <button 
-                  onClick={() => router.back()} 
+                <button
+                  onClick={() => router.back()}
                   className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
                   aria-label="Back"
                 >
                   <ArrowLeft className="w-5 h-5 text-gray-700" />
                 </button>
               ) : (
-                <button 
-                  onClick={() => setSidebarOpen(true)} 
+                <button
+                  onClick={() => setSidebarOpen(true)}
                   className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
                   aria-label="Menu"
                 >
                   <Menu className="w-5 h-5 text-gray-700" />
                 </button>
               )}
-              <Link href="/" className="flex items-center space-x-2">
 
-              <img 
-               src='/images/earnko-logo-round.png'
-               alt='earnko logo'
-               className='w-[40px]'
-               />
-                {/* <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center">
-                  <TrendingUp className="w-4 h-4 text-white" />
-                </div> */}
+              <Link href="/" className="flex items-center space-x-2">
+                <img
+                  src="/images/earnko-logo-round.png"
+                  alt="earnko logo"
+                  className="w-[40px]"
+                />
                 <span className="text-lg font-bold text-gray-900">Earnko</span>
               </Link>
             </div>
+
             <div className="relative flex items-center gap-2">
               <button
                 ref={notifBtnRef}
@@ -340,12 +327,15 @@ export default function DashboardLayout({ children }) {
                   </span>
                 )}
               </button>
-              {/* Earnings pill to the right of notifications (from backend wallet) */}
-              <div className="px-2 py-1 rounded-lg bg-gray-100 text-gray-900 text-xs font-semibold">
-                {formatINR(totalEarnings)}
+
+              {/* ✅ Total earnings pill (mobile) */}
+              <div
+                className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-gray-900 to-gray-800 text-white text-xs font-semibold"
+                title="Total Earnings (lifetime)"
+              >
+                Total: {formatINR(totalEarnings)}
               </div>
 
-              {/* Mobile notif dropdown */}
               {notifOpen && (
                 <div
                   ref={notifBoxRef}
@@ -361,6 +351,7 @@ export default function DashboardLayout({ children }) {
                       <RefreshCw className={`w-4 h-4 ${notifLoading ? 'animate-spin' : ''}`} />
                     </button>
                   </div>
+
                   <div className="max-h-64 overflow-y-auto">
                     {notifLoading ? (
                       <div className="p-3 space-y-2">
@@ -393,21 +384,16 @@ export default function DashboardLayout({ children }) {
         </div>
       </header>
 
-      {/* Desktop Sidebar - Slim Design */}
+      {/* Desktop Sidebar */}
       <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 z-30">
         <div className="flex flex-col flex-1 min-h-0 bg-white border-r border-gray-200">
-          {/* Logo Section - Compact */}
           <div className="px-4 py-5 border-b border-gray-200">
             <Link href="/" className="flex items-center space-x-3 group">
-
-              <img 
-               src='/images/earnko-logo-round.png'
-               alt='earnko logo'
-               className='w-[40px]'
-               />
-              {/* <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center group-hover:scale-105 transition-transform duration-300">
-                <TrendingUp className="w-5 h-5 text-white" />
-              </div> */}
+              <img
+                src="/images/earnko-logo-round.png"
+                alt="earnko logo"
+                className="w-[40px]"
+              />
               <div>
                 <div className="text-lg font-bold text-gray-900">Earnko</div>
                 <div className="text-xs text-gray-500">Dashboard</div>
@@ -415,7 +401,6 @@ export default function DashboardLayout({ children }) {
             </Link>
           </div>
 
-          {/* User Profile - Compact */}
           <div className="px-4 py-4 border-b border-gray-200">
             <div className="flex items-center gap-3">
               <div className="relative">
@@ -431,7 +416,6 @@ export default function DashboardLayout({ children }) {
             </div>
           </div>
 
-          {/* Navigation - Organized by Categories */}
           <nav className="flex-1 px-2 py-4 overflow-y-auto">
             {navCategories.map((category, index) => (
               <div key={index} className="mb-6">
@@ -476,7 +460,6 @@ export default function DashboardLayout({ children }) {
             ))}
           </nav>
 
-          {/* Quick Balance - Compact */}
           <div className="px-4 py-4 border-t border-gray-200">
             <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 text-white">
               <div className="text-sm font-medium text-gray-300">Available</div>
@@ -508,15 +491,11 @@ export default function DashboardLayout({ children }) {
         <div className="h-full flex flex-col bg-white shadow-xl">
           <div className="px-4 py-5 border-b flex items-center justify-between">
             <Link href="/" className="flex items-center space-x-3">
-
-              <img 
-               src='/images/earnko-logo-round.png'
-               alt='earnko logo'
-               className='w-[40px]'
-               />
-              {/* <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center">
-                <TrendingUp className="w-5 h-5 text-white" />
-              </div> */}
+              <img
+                src="/images/earnko-logo-round.png"
+                alt="earnko logo"
+                className="w-[40px]"
+              />
               <div>
                 <div className="text-lg font-bold text-gray-900">Earnko</div>
                 <div className="text-xs text-gray-500">Dashboard</div>
@@ -526,7 +505,7 @@ export default function DashboardLayout({ children }) {
               <X className="w-5 h-5 text-gray-600" />
             </button>
           </div>
-          
+
           <nav className="flex-1 px-2 py-4 overflow-y-auto">
             {navCategories.map((category, index) => (
               <div key={index} className="mb-4">
@@ -565,9 +544,9 @@ export default function DashboardLayout({ children }) {
               </div>
             ))}
           </nav>
-          
+
           <div className="px-4 py-4 border-t">
-            <button 
+            <button
               onClick={handleLogout}
               className="w-full flex items-center justify-center gap-2 py-3 text-red-600 hover:bg-red-50 rounded-xl font-medium"
             >
@@ -578,23 +557,20 @@ export default function DashboardLayout({ children }) {
         </div>
       </aside>
 
-      {/* Overlay for mobile */}
       {sidebarOpen && (
-        <div 
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden" 
-          onClick={() => setSidebarOpen(false)} 
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Main Content Area with extra bottom padding so bottom nav doesn't overlap content */}
       <div className="lg:pl-64">
-        {/* Desktop Header - Clean and Functional */}
+        {/* Desktop Header */}
         <header className="hidden lg:block bg-white border-b border-gray-200 sticky top-0 z-30">
           <div className="px-6 py-3">
             <div className="flex items-center justify-between">
-              {/* Left: Breadcrumb and Search */}
+              {/* Left: Breadcrumb */}
               <div className="flex items-center gap-6 flex-1 min-w-0">
-                {/* Breadcrumb */}
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-sm font-medium text-gray-900">Dashboard</span>
                   <ChevronRight className="w-4 h-4 text-gray-400" />
@@ -602,35 +578,24 @@ export default function DashboardLayout({ children }) {
                     {pathname.split('/').pop()?.charAt(0).toUpperCase() + pathname.split('/').pop()?.slice(1) || 'Overview'}
                   </span>
                 </div>
-
-                {/* Search */}
-                {/* <div className="flex-1 max-w-md">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                      type="search"
-                      placeholder="Search anything..."
-                      className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                    />
-                  </div>
-                </div> */}
               </div>
 
-              {/* Right: Stats and Actions */}
+              {/* Right: Stats + Actions */}
               <div className="flex items-center gap-4">
-                {/* Quick Stats */}
-                <div className="flex items-center gap-3">
+                {/* ✅ Quick Stats: Total, Today, Clicks, Conversions */}
+                <div className="flex items-center gap-5">
                   {headerStats.map((stat, index) => (
                     <div key={index} className="text-center">
-                      <div className="text-xs text-gray-500">{stat.label}</div>
-                      <div className="text-sm font-bold text-gray-900">{stat.value}</div>
+                      <div className="text-[11px] text-gray-500">{stat.label}</div>
+                      <div className={`text-sm font-bold ${stat.label === 'Total' ? 'text-gray-900' : 'text-gray-900'}`}>
+                        {stat.value}
+                      </div>
                     </div>
                   ))}
                 </div>
 
                 <div className="w-px h-6 bg-gray-200" />
 
-                {/* Actions (Create Link removed as requested) */}
                 <div className="relative flex items-center gap-2">
                   <button
                     ref={notifBtnRef}
@@ -646,7 +611,6 @@ export default function DashboardLayout({ children }) {
                     )}
                   </button>
 
-                  {/* Desktop notif dropdown opens below the bell */}
                   {notifOpen && (
                     <div
                       ref={notifBoxRef}
@@ -690,8 +654,8 @@ export default function DashboardLayout({ children }) {
                     </div>
                   )}
 
-                  <Link 
-                    href="/dashboard/settings" 
+                  <Link
+                    href="/dashboard/settings"
                     className="p-2 rounded-lg hover:bg-gray-100"
                   >
                     <SettingsIcon className="w-5 h-5 text-gray-600" />
@@ -702,14 +666,13 @@ export default function DashboardLayout({ children }) {
           </div>
         </header>
 
-        {/* Main Content - add bottom padding to prevent overlap with bottom nav on mobile */}
         <main className="min-h-screen pb-24 lg:pb-0" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
           <div className="px-4 mb-[60px] lg:mb-0 lg:px-6 py-4">
             {children}
           </div>
         </main>
 
-        {/* Bottom Mobile Nav - Essential Items Only */}
+        {/* Bottom Mobile Nav */}
         <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-30">
           <div className="flex items-center justify-around py-2">
             <Link href="/" className="flex flex-col items-center p-2">
@@ -719,7 +682,7 @@ export default function DashboardLayout({ children }) {
             <Link href="/dashboard/analytics" className="flex flex-col items-center p-2">
               <BarChart3 className="w-5 h-5 text-gray-600" />
               <span className="text-xs mt-1">Analytics</span>
-            </Link>  
+            </Link>
             <Link href="/dashboard/affiliate" className="flex flex-col items-center p-2">
               <Zap className="w-5 h-5 text-gray-600" />
               <span className="text-xs mt-1">Create</span>
@@ -736,9 +699,7 @@ export default function DashboardLayout({ children }) {
         </div>
       </div>
 
-      {/* Custom styles */}
       <style jsx global>{`
-        /* Custom scrollbar for sidebar */
         aside nav {
           scrollbar-width: thin;
           scrollbar-color: #cbd5e1 #f1f5f9;
@@ -746,9 +707,7 @@ export default function DashboardLayout({ children }) {
         aside nav::-webkit-scrollbar { width: 4px; }
         aside nav::-webkit-scrollbar-track { background: #f1f5f9; }
         aside nav::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 2px; }
-        /* Smooth transitions */
         * { transition: background-color 0.2s ease, border-color 0.2s ease; }
-        /* Pulse animation */
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
       `}</style>

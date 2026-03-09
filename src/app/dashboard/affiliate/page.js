@@ -223,9 +223,9 @@ if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
 
             {singleResult && (
               <div className="mt-6 space-y-4">
-                <ResultRow title="Input URL" value={singleResult.inputUrl} />
-                <ResultRow title="Affiliate Link" value={singleResult.link} canOpen canCopy />
+                {/* <ResultRow title="Input URL" value={singleResult.inputUrl} /> */}
                 <ResultRow title="Short/Share URL" value={singleResult.shareUrl} canOpen canCopy emphasis />
+                <ResultRow title="Affiliate Link" value={singleResult.link} canOpen canCopy />
                 <div className="flex items-center gap-2 text-xs text-gray-600">
                   <Shield className="w-3.5 h-3.5 text-green-600" />
                   Strict mode: If campaign is paused, link wouldn't be generated.

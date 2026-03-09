@@ -123,11 +123,12 @@ function StoresPageInner() {
         throw new Error(js?.message || 'Failed to generate link');
       }
 
-      const providerLink = js?.data?.link;
-      if (!providerLink) throw new Error('No provider link returned');
+      // ✅ show only short/share URL (not provider direct link)
+      const shortUrl = js?.data?.shareUrl || js?.data?.shortUrl || null;
+      if (!shortUrl) throw new Error('No short/share URL returned');
 
       setShareFor(store);
-      setShareUrl(providerLink);
+      setShareUrl(shortUrl);
       setShareOpen(true);
     } catch (err) {
       toast.error(err?.message || 'Failed to generate link');
@@ -272,7 +273,7 @@ function StoresPageInner() {
         </div>
       </div>
 
-      {/* Profit rates modal (scrollable + table with vertical dividers) */}
+      {/* Profit rates modal */}
       {ratesOpen && (
         <div className="fixed inset-0 z-[70]">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeProfitRates} />
@@ -339,7 +340,7 @@ function StoresPageInner() {
 
             <div className="p-4 space-y-4">
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <div className="text-xs text-gray-500 mb-1">Affiliate link</div>
+                <div className="text-xs text-gray-500 mb-1">Share link</div>
                 <div className="text-sm text-gray-900 break-all">{shareUrl}</div>
                 <div className="mt-2 flex items-center gap-2">
                   <button
@@ -376,7 +377,7 @@ function StoresPageInner() {
               </div>
 
               <div className="text-[11px] text-gray-500">
-                Note: This is the direct affiliate link from the provider. Purchases tracked to this link will count toward your earnings.
+                Note: Share this short link. Purchases tracked to this link will count toward your earnings.
               </div>
             </div>
           </div>
@@ -387,6 +388,12 @@ function StoresPageInner() {
 }
 
 function RatesTable({ title, rows }) {
+  const fmtMoney = (n) => {
+    const x = Number(n);
+    if (!Number.isFinite(x)) return '—';
+    return `₹${x.toLocaleString('en-IN')}`;
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between gap-3 mb-2">
@@ -401,14 +408,12 @@ function RatesTable({ title, rows }) {
         <div className="text-sm text-gray-600">No rates.</div>
       ) : (
         <div className="border border-gray-200 rounded-xl overflow-hidden">
-          {/* Header row */}
           <div className="grid grid-cols-12 bg-gray-50 text-xs font-semibold text-gray-600">
             <div className="col-span-6 px-3 py-2 border-r border-gray-200">Category</div>
             <div className="col-span-3 px-3 py-2 border-r border-gray-200">Rate</div>
             <div className="col-span-3 px-3 py-2">Max Cap</div>
           </div>
 
-          {/* Data rows */}
           {rows.map((r) => {
             const rate = Number(r.commissionRate || 0);
             const isPct = r.commissionType === 'percentage';
@@ -418,10 +423,10 @@ function RatesTable({ title, rows }) {
                   {r.categoryKey}
                 </div>
                 <div className="col-span-3 px-3 py-2 text-gray-700 border-r border-gray-100">
-                  {rate}{isPct ? '%' : ''}
+                  {isPct ? `${rate}%` : fmtMoney(rate)}
                 </div>
                 <div className="col-span-3 px-3 py-2 text-gray-700">
-                  {r.maxCap != null ? `₹${Number(r.maxCap).toLocaleString()}` : '—'}
+                  {r.maxCap != null ? fmtMoney(r.maxCap) : '—'}
                 </div>
               </div>
             );
@@ -444,10 +449,23 @@ function ShareTile({ label, color, onClick }) {
 }
 
 function StoreItem({ store, onShare, onViewProfit, getLogoUrl, sharing }) {
-  const rateText =
-    typeof store.commissionRate === 'number'
-      ? `${Number(store.commissionRate)}${store.commissionType === 'percentage' ? '%' : ''}`
-      : null;
+  const fmtMoney = (n) => {
+    const x = Number(n);
+    if (!Number.isFinite(x)) return null;
+    // no decimals if integer, else keep 2
+    const isInt = Math.floor(x) === x;
+    const val = isInt ? x.toLocaleString('en-IN') : x.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return `₹${val}`;
+  };
+
+  const rateText = (() => {
+    const rate = Number(store?.commissionRate);
+    if (!Number.isFinite(rate)) return null;
+
+    const type = String(store?.commissionType || 'percentage').toLowerCase();
+    if (type === 'fixed') return fmtMoney(rate);     // ✅ ₹ for fixed
+    return `${rate}%`;                               // ✅ % for percentage
+  })();
 
   const logoUrl = getLogoUrl(store.logo);
 
