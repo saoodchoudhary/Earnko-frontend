@@ -19,14 +19,13 @@ import {
   Target,
   Eye,
   CheckCircle,
-  Calendar,
   Gift,
   Store as StoreIcon,
-  CreditCard,
   RefreshCw,
   ExternalLink,
   Download,
   Filter,
+  Copy,
 } from 'lucide-react';
 
 /**
@@ -129,8 +128,18 @@ function downloadTextFile(filename, text) {
 
 function csvEscape(v) {
   const s = String(v ?? '');
-  if (/[,"\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  if (/[,\"\n]/.test(s)) return `"${s.replace(/\"/g, '\"\"')}"`;
   return s;
+}
+
+async function copyToClipboard(text, msg = 'Copied') {
+  try {
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
+    toast.success(msg);
+  } catch {
+    toast.error('Copy failed');
+  }
 }
 
 const BRAND = {
@@ -183,7 +192,14 @@ export default function DashboardPage() {
 
   const [me, setMe] = useState(null);
   const [wallet, setWallet] = useState(null);
-  const [links, setLinks] = useState([]);
+
+  /**
+   * ✅ IMPORTANT:
+   * Previously: links from /api/user/links (cuelinks + stats)
+   * Now: shortUrls from /api/user/short-urls (generator short links /r/:code)
+   */
+  const [shortUrls, setShortUrls] = useState([]);
+
   const [offers, setOffers] = useState([]);
 
   const [analyticsSummary, setAnalyticsSummary] = useState({
@@ -202,7 +218,7 @@ export default function DashboardPage() {
 
   const [loadingMe, setLoadingMe] = useState(true);
   const [loadingWallet, setLoadingWallet] = useState(true);
-  const [loadingLinks, setLoadingLinks] = useState(true);
+  const [loadingShortUrls, setLoadingShortUrls] = useState(true);
   const [loadingOffers, setLoadingOffers] = useState(true);
 
   const [refreshTick, setRefreshTick] = useState(0);
@@ -285,31 +301,37 @@ export default function DashboardPage() {
     return () => controller.abort();
   }, [base, refreshTick]);
 
-  // load links
+  /**
+   * ✅ NEW: load short urls (generator short links)
+   * GET /api/user/short-urls
+   */
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
       try {
         if (!base) { toast.error('Backend URL not configured'); return; }
         const token = getToken();
-        setLoadingLinks(true);
+        setLoadingShortUrls(true);
 
-        const r = await fetch(`${base}/api/user/links`, {
+        const params = new URLSearchParams({ limit: '10', page: '1' });
+        const r = await fetch(`${base}/api/user/short-urls?${params.toString()}`, {
           signal: controller.signal,
           headers: { Authorization: token ? `Bearer ${token}` : '' }
         });
         const d = await safeJson(r);
         if (!r.ok) {
-          toast.error(d?.message || `Failed to load links (HTTP ${r.status})`);
-          setLinks([]);
+          toast.error(d?.message || `Failed to load short URLs (HTTP ${r.status})`);
+          setShortUrls([]);
           return;
         }
-        setLinks(normalizeList(d?.data));
+
+        // backend returns: { success:true, data:{ items, total, ... } }
+        setShortUrls(normalizeList(d?.data));
       } catch (err) {
-        if (err?.name !== 'AbortError') toast.error('Error loading links');
-        setLinks([]);
+        if (err?.name !== 'AbortError') toast.error('Error loading short URLs');
+        setShortUrls([]);
       } finally {
-        setLoadingLinks(false);
+        setLoadingShortUrls(false);
       }
     }
     load();
@@ -501,11 +523,11 @@ export default function DashboardPage() {
     });
   }, [analyticsDaily, keysByRange]);
 
-  const recentLinks = useMemo(() => {
-    const arr = Array.isArray(links) ? [...links] : [];
+  const recentShortUrls = useMemo(() => {
+    const arr = Array.isArray(shortUrls) ? [...shortUrls] : [];
     arr.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     return arr.slice(0, 5);
-  }, [links]);
+  }, [shortUrls]);
 
   const pieData = useMemo(() => {
     const data = [
@@ -525,17 +547,17 @@ export default function DashboardPage() {
     for (const d of chartSeries) {
       lines.push(['DAILY', d.date, d.clicks, d.conversions, d.commission].map(csvEscape).join(','));
     }
+
     lines.push('');
-    lines.push(['TYPE', 'LINK_ID', 'URL', 'CLICKS', 'CONVERSIONS', 'EARNINGS', 'CREATED_AT'].map(csvEscape).join(','));
-    for (const l of recentLinks) {
+    lines.push(['TYPE', 'CODE', 'SHORT_URL', 'PROVIDER', 'CLICK_ID', 'CREATED_AT'].map(csvEscape).join(','));
+    for (const s of recentShortUrls) {
       lines.push([
-        'LINK',
-        l.subid || l._id || '',
-        l.shareUrl || l.shortUrl || '',
-        safeNumber(l.clicks, 0),
-        safeNumber(l.approvedConversions || l.conversions, 0),
-        safeNumber(l.approvedCommissionSum || l.commission, 0),
-        l.createdAt || '',
+        'SHORT_URL',
+        s.code || '',
+        s.shortUrl || '',
+        s.provider || '',
+        s.clickId || '',
+        s.createdAt || '',
       ].map(csvEscape).join(','));
     }
 
@@ -547,7 +569,7 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-50 to-white pb-24">
-      {/* Compact Professional Header */}
+      {/* Header */}
       <section className="bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 text-white">
         <div className="container mx-auto px-4 py-6 md:py-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -616,7 +638,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* KPIs - cleaner */}
+      {/* KPIs */}
       <section className="container mx-auto px-4 -mt-5">
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 md:p-5">
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -630,7 +652,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Charts - mobile safe */}
+      {/* Content */}
       <section className="container mx-auto px-4 mt-6">
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {/* Commission line */}
@@ -680,7 +702,6 @@ export default function DashboardPage() {
                     <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="#94A3B8" interval="preserveStartEnd" />
                     <YAxis tick={{ fontSize: 11 }} stroke="#94A3B8" width={40} />
                     <Tooltip content={<NiceTooltip />} />
-                    {/* Legend hidden on mobile to prevent cut */}
                     <Legend wrapperStyle={{ fontSize: 12 }} className="hidden md:block" />
                     <Bar dataKey="clicks" name="Clicks" fill={BRAND.blue} radius={[8, 8, 0, 0]} />
                     <Bar dataKey="conversions" name="Conversions" fill={BRAND.cyan} radius={[8, 8, 0, 0]} />
@@ -690,12 +711,8 @@ export default function DashboardPage() {
             )}
 
             <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3 flex items-center justify-between">
-              <div className="text-sm text-gray-700 font-semibold">
-                Conversion rate
-              </div>
-              <div className="text-sm font-extrabold text-gray-900">
-                {totals.conversionRate.toFixed(2)}%
-              </div>
+              <div className="text-sm text-gray-700 font-semibold">Conversion rate</div>
+              <div className="text-sm font-extrabold text-gray-900">{totals.conversionRate.toFixed(2)}%</div>
             </div>
           </Card>
 
@@ -727,62 +744,81 @@ export default function DashboardPage() {
             </div>
           </Card>
 
-          {/* Recent links + Offers */}
+          {/* Right Column */}
           <div className="space-y-6">
+            {/* ✅ Recent Short URLs (new endpoint) */}
             <Card
               title="Recent Links"
-              subtitle="Last generated links"
+              subtitle="Your latest generator short URLs"
               right={
                 <Link href="/dashboard/affiliate" className="text-sm font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1">
-                  Manage <ChevronRight className="w-4 h-4" />
+                  Generate <ChevronRight className="w-4 h-4" />
                 </Link>
               }
             >
-              {loadingLinks ? (
+              {loadingShortUrls ? (
                 <div className="space-y-2">
                   {[...Array(5)].map((_, i) => (
                     <div key={i} className="h-12 rounded-xl bg-gray-100 animate-pulse" />
                   ))}
                 </div>
-              ) : recentLinks.length === 0 ? (
+              ) : recentShortUrls.length === 0 ? (
                 <Empty
                   icon={<LinkIcon className="w-7 h-7 text-gray-400" />}
-                  title="No links yet"
-                  subtitle="Generate a link to start tracking clicks and earnings."
+                  title="No short links yet"
+                  subtitle="Generate a link from Affiliate Tools to see it here."
                   actionText="Generate"
                   onAction={() => router.push('/dashboard/affiliate')}
                 />
               ) : (
                 <div className="space-y-2">
-                  {recentLinks.map((l, idx) => {
-                    const url = l.shareUrl || l.shortUrl || '';
-                    const clicks = safeNumber(l.clicks, 0);
-                    const conv = safeNumber(l.approvedConversions || l.conversions, 0);
-                    const earn = safeNumber(l.approvedCommissionSum || l.commission, 0);
+                  {recentShortUrls.map((it, idx) => {
+                    const shortUrl = it.shortUrl || '';
+                    const created = it.createdAt ? new Date(it.createdAt) : null;
+
                     return (
-                      <div key={l.subid || l._id || idx} className="rounded-xl border border-gray-200 p-3 hover:bg-gray-50 transition-colors">
+                      <div key={it.code || idx} className="rounded-xl border border-gray-200 p-3 hover:bg-gray-50 transition-colors">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-[11px] text-gray-500">
-                              {l.createdAt ? new Date(l.createdAt).toLocaleDateString() : ''}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {it.code ? (
+                                <span className="text-[11px] font-mono bg-gray-100 px-2 py-1 rounded">
+                                  {String(it.code)}
+                                </span>
+                              ) : null}
+                              <span className="text-[11px] text-gray-500">
+                                {created ? created.toLocaleDateString() : ''}
+                              </span>
                             </div>
-                            <div className="text-sm font-semibold text-gray-900 truncate">
-                              {(l.subid || 'link').slice(0, 18)}
+
+                            <div className="mt-2 text-xs text-gray-700 break-all line-clamp-2">
+                              {shortUrl || '-'}
                             </div>
-                            <div className="text-xs text-gray-600 break-all line-clamp-2">{url || '-'}</div>
                           </div>
 
-                          {url ? (
-                            <a href={url} target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg hover:bg-gray-100">
-                              <ExternalLink className="w-4 h-4 text-gray-500" />
-                            </a>
-                          ) : null}
-                        </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(shortUrl, 'Short URL copied')}
+                              className="p-2 rounded-lg hover:bg-gray-100"
+                              aria-label="Copy short URL"
+                              disabled={!shortUrl}
+                            >
+                              <Copy className="w-4 h-4 text-gray-600" />
+                            </button>
 
-                        <div className="mt-3 grid grid-cols-3 gap-2">
-                          <Tiny label="Clicks" value={clicks.toLocaleString('en-IN')} />
-                          <Tiny label="Conv" value={conv.toLocaleString('en-IN')} tone="green" />
-                          <Tiny label="Earn" value={formatINR(earn)} tone="purple" />
+                            {shortUrl ? (
+                              <a
+                                href={shortUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2 rounded-lg hover:bg-gray-100"
+                                aria-label="Open short URL"
+                              >
+                                <ExternalLink className="w-4 h-4 text-gray-600" />
+                              </a>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
                     );
@@ -791,6 +827,7 @@ export default function DashboardPage() {
               )}
             </Card>
 
+            {/* Offers */}
             <Card
               title="Featured Offers"
               subtitle="High commission offers"
@@ -807,11 +844,7 @@ export default function DashboardPage() {
                   ))}
                 </div>
               ) : offers.length === 0 ? (
-                <Empty
-                  icon={<Gift className="w-7 h-7 text-gray-400" />}
-                  title="No offers"
-                  subtitle="Offers will appear here when available."
-                />
+                <Empty icon={<Gift className="w-7 h-7 text-gray-400" />} title="No offers" subtitle="Offers will appear here when available." />
               ) : (
                 <div className="space-y-2">
                   {offers.slice(0, 6).map((o, idx) => (
@@ -873,7 +906,6 @@ function Kpi({ title, value, icon, tone, loading }) {
     indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200',
     green: 'bg-green-50 text-green-700 border-green-200',
     amber: 'bg-amber-50 text-amber-700 border-amber-200',
-    purple: 'bg-purple-50 text-purple-700 border-purple-200',
     dark: 'bg-gray-900 text-white border-gray-900',
   };
 
@@ -912,20 +944,6 @@ function SmallStat({ label, value }) {
     <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-center">
       <div className="text-xs text-gray-500">{label}</div>
       <div className="text-sm font-extrabold text-gray-900 mt-1">{value}</div>
-    </div>
-  );
-}
-
-function Tiny({ label, value, tone }) {
-  const tones = {
-    green: 'bg-green-50 border-green-200 text-green-700',
-    purple: 'bg-purple-50 border-purple-200 text-purple-700',
-  };
-  const cls = tones[tone] || 'bg-gray-50 border-gray-200 text-gray-700';
-  return (
-    <div className={`rounded-lg border px-2 py-1.5 text-center ${cls}`}>
-      <div className="text-[10px] opacity-80">{label}</div>
-      <div className="text-xs font-extrabold">{value}</div>
     </div>
   );
 }

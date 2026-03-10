@@ -302,8 +302,8 @@ if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
               {bulkResults.length > 0 && (
                 <div className="grid grid-cols-1 gap-4">
                   {bulkResults.map((r, i) => (
-                    <div key={r.inputUrl + i} className="border border-gray-200 rounded-xl p-4">
-                      <div className="flex items-start justify-between gap-3">
+                    <div key={r.inputUrl + i} className="">
+                      {/* <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="text-[11px] text-gray-500">Input</div>
                           <div className="text-sm text-gray-800 break-all line-clamp-2 sm:line-clamp-1">{r.inputUrl}</div>
@@ -312,11 +312,11 @@ if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
                           {r.status === 'ok' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
                           {r.status === 'ok' ? 'OK' : 'Error'}
                         </span>
-                      </div>
+                      </div> */}
 
                       {r.status === 'ok' ? (
-                        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <ResultRow title="Affiliate Link" value={r.link} canOpen canCopy compact />
+                        <div className="mt-3 grid grid-cols-1  gap-3">
+                          {/* <ResultRow title="Affiliate Link" value={r.link} canOpen canCopy compact /> */}
                           <ResultRow title="Short/Share URL" value={r.shareUrl} canOpen canCopy compact emphasis />
                         </div>
                       ) : (

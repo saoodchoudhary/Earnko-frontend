@@ -75,6 +75,14 @@ function daysBetweenInclusiveUTC(from, to) {
   return Math.floor((b - a) / (1000 * 60 * 60 * 24)) + 1
 }
 
+function safeArray(v) {
+  return Array.isArray(v) ? v : []
+}
+
+function fmtINR(n) {
+  return `₹${Number(n || 0).toLocaleString('en-IN')}`
+}
+
 export default function UserAnalyticsPage() {
   // 'current_month' | 'last_month' | 'custom'
   const [mode, setMode] = useState('current_month')
@@ -101,7 +109,11 @@ export default function UserAnalyticsPage() {
   })
   const [daily, setDaily] = useState([])
 
-  // Per-link performance
+  /**
+   * ✅ UPDATED:
+   * Old per-link performance used /api/user/links (cuelinks stats).
+   * Now we show generator short URLs via /api/user/short-urls
+   */
   const [linksLoading, setLinksLoading] = useState(true)
   const [links, setLinks] = useState([])
 
@@ -118,8 +130,6 @@ export default function UserAnalyticsPage() {
     const txt = await res.text().catch(() => '')
     return { success: false, message: txt }
   }
-
-  const fmtINR = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`
 
   const copyToClipboard = async (text, msg = 'Copied') => {
     try { await navigator.clipboard.writeText(text); toast.success(msg) }
@@ -217,6 +227,13 @@ export default function UserAnalyticsPage() {
     }
   }
 
+  /**
+   * ✅ UPDATED: load generator short links
+   * GET /api/user/short-urls?limit=50&page=1
+   *
+   * Expected backend response:
+   * { success:true, data:{ items:[{code, shortUrl, provider, clickId, createdAt}], total,... } }
+   */
   const loadLinks = async (signal) => {
     try {
       setLinksLoading(true)
@@ -225,7 +242,9 @@ export default function UserAnalyticsPage() {
         setLinks([])
         return
       }
-      const res = await fetch(`${base}/api/user/links`, {
+
+      const qs = new URLSearchParams({ limit: '50', page: '1' })
+      const res = await fetch(`${base}/api/user/short-urls?${qs.toString()}`, {
         signal,
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -235,6 +254,7 @@ export default function UserAnalyticsPage() {
         setLinks([])
         return
       }
+
       const list = js?.data?.items || []
       setLinks(Array.isArray(list) ? list : [])
     } catch (err) {
@@ -261,7 +281,7 @@ export default function UserAnalyticsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, appliedCustom.from, appliedCustom.to])
 
-  const chartData = useMemo(() => Array.isArray(daily) ? daily : [], [daily])
+  const chartData = useMemo(() => safeArray(daily), [daily])
 
   const downloadReport = () => {
     const report = {
@@ -271,6 +291,8 @@ export default function UserAnalyticsPage() {
       generatedAt: new Date().toISOString(),
       summary,
       daily,
+      // include short-urls in export too
+      shortUrls: links,
     }
     const dataStr = JSON.stringify(report, null, 2)
     const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr)
@@ -310,6 +332,12 @@ export default function UserAnalyticsPage() {
     const days = daysBetweenInclusiveUTC(r.from, r.to)
     return `${days} day(s)`
   }, [customFrom, customTo])
+
+  const sortedLinks = useMemo(() => {
+    const arr = safeArray(links).slice()
+    arr.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    return arr
+  }, [links])
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
@@ -351,7 +379,7 @@ export default function UserAnalyticsPage() {
                 className="px-4 py-2 bg-white/20 rounded-xl hover:bg-white/30 transition-all flex items-center gap-2"
               >
                 <LinkIcon className="w-4 h-4" />
-                View Link Performance
+                View Short Links
               </button>
             </div>
           </div>
@@ -438,7 +466,7 @@ export default function UserAnalyticsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <StatCard title="Total Commission" value={fmtINR(summary.commissionTotal || 0)} icon={<DollarSign className="w-5 h-5" />} color="from-purple-500 to-pink-600" />
               <StatCard title="Pending Amount" value={fmtINR(summary.pendingAmount || 0)} icon={<ClockIcon className="w-5 h-5" />} color="from-amber-500 to-orange-600" />
-              <StatCard title="Approved Amount" value={fmtINR(summary.approvedAmount || 0)} icon={<CheckCircle className="w-5 h-5" />} color="from-indigo-500 to-purple-600" />
+              <StatCard title="Approved Amount" value={fmtINR(summary.approvedAmount || 0)} icon={<CheckCircleIcon className="w-5 h-5" />} color="from-indigo-500 to-purple-600" />
             </div>
 
             {/* Chart */}
@@ -490,7 +518,7 @@ export default function UserAnalyticsPage() {
                       />
                       <Legend />
                       <Area type="monotone" dataKey="clicks" name="Clicks" stroke="#3b82f6" fill="url(#colorClicks)" strokeWidth={2} />
-                      <Area type="monotone" dataKey="conversions" name="Conversions" stroke="#10b981" fill="url(#colorConversions)" strokeWidth={2} />
+                      <Area type="monotone" dataKey="conversions" name="Conversions" stroke="#10b981" fill="url(#colorConversions)" strokeWidth={2} strokeWidth={2} />
                       <Area type="monotone" dataKey="commission" name="Commission" stroke="#8b5cf6" fill="url(#colorCommission)" strokeWidth={2} />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -498,18 +526,20 @@ export default function UserAnalyticsPage() {
               )}
             </div>
 
-            {/* Link Performance */}
+            {/* ✅ Short URL Performance (new endpoint) */}
             <div ref={linkPerformanceRef} className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                     <LinkIcon className="w-5 h-5 text-blue-600" />
-                    Link Performance
+                    Your Short Links
                   </h3>
-                  <p className="text-gray-600 text-sm mt-1">Your generated links with clicks and earnings</p>
+                  <p className="text-gray-600 text-sm mt-1">
+                    These are the same short URLs generated by “Generate Links” tool (commission-safe).
+                  </p>
                 </div>
                 <div className="text-sm text-gray-500">
-                  {linksLoading ? 'Loading...' : `${links.length} link(s)`}
+                  {linksLoading ? 'Loading...' : `${sortedLinks.length} link(s)`}
                 </div>
               </div>
 
@@ -517,73 +547,74 @@ export default function UserAnalyticsPage() {
                 <div className="space-y-2">
                   {[...Array(4)].map((_, i) => (<div key={i} className="h-16 bg-gray-100 rounded-lg animate-pulse" />))}
                 </div>
-              ) : links.length === 0 ? (
+              ) : sortedLinks.length === 0 ? (
                 <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-xl">
                   <LinkIcon className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-600">No links found</p>
+                  <p className="text-gray-600">No short links found</p>
+                  <p className="text-xs text-gray-500 mt-1">Generate a link from Dashboard → Generate Links</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {links.map((it, idx) => (
-                    <div key={it.subid || idx} className="border border-gray-200 rounded-2xl p-4 hover:shadow-sm transition-shadow bg-gradient-to-b from-white to-gray-50">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-xs text-gray-500">Generated Link</div>
-                          <div className="text-sm text-gray-700 break-all line-clamp-2 sm:line-clamp-1">
-                            {it.shareUrl || '-'}
+                  {sortedLinks.map((it, idx) => {
+                    const url = it.shortUrl || ''
+                    const createdAt = it.createdAt ? new Date(it.createdAt) : null
+                    const provider = it.provider || '-'
+                    const code = it.code || '-'
+
+                    return (
+                      <div key={it.code || idx} className="border border-gray-200 rounded-2xl p-4 hover:shadow-sm transition-shadow bg-gradient-to-b from-white to-gray-50">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-xs text-gray-500">Short URL</div>
+                            <div className="text-sm text-gray-700 break-all line-clamp-2 sm:line-clamp-1">
+                              {url || '-'}
+                            </div>
+
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                              {/* <span className="font-mono bg-gray-100 border border-gray-200 px-2 py-1 rounded">
+                                code: {code}
+                              </span>
+                              <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded">
+                                provider: {provider}
+                              </span> */}
+                              <span className="text-gray-500">
+                                {createdAt ? createdAt.toLocaleString() : ''}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {url && (
+                              <>
+                                <button
+                                  className="px-2 py-1.5 border border-gray-300 rounded-md text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-1"
+                                  onClick={() => copyToClipboard(url, 'Short URL copied')}
+                                  title="Copy Short URL"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                  Copy
+                                </button>
+                                <a
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-2 py-1.5 border border-gray-300 rounded-md text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-1"
+                                  title="Open Short URL"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                  Open
+                                </a>
+                              </>
+                            )}
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          {it.shareUrl && (
-                            <>
-                              <button
-                                className="px-2 py-1.5 border border-gray-300 rounded-md text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-1"
-                                onClick={() => copyToClipboard(it.shareUrl, 'Link copied')}
-                                title="Copy Link"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                                Copy
-                              </button>
-                              <a
-                                href={it.shareUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-2 py-1.5 border border-gray-300 rounded-md text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-1"
-                                title="Open Link"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                                Open
-                              </a>
-                            </>
-                          )}
-                        </div>
+                        
                       </div>
-
-                      <div className="mt-4 grid grid-cols-2 gap-3">
-                        <div className="text-center">
-                          <div className="text-[11px] text-gray-500">Clicks</div>
-                          <div className="text-sm font-bold text-gray-900">
-                            {Number(it.clicks || 0).toLocaleString('en-IN')}
-                          </div>
-                        </div>
-
-                        <div className="text-center">
-                          <div className="text-[11px] text-gray-500">Earnings</div>
-                          <div className="text-sm font-bold text-purple-600">
-                            {fmtINR(it.approvedCommissionSum || 0)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
-
-              <div className="mt-4 text-xs text-gray-500 flex items-center gap-2">
-                <Shield className="w-4 h-4 text-green-600" />
-                Tip: Use “Generated Link” for sharing. It will track clicks and earnings.
-              </div>
             </div>
           </div>
 
@@ -615,6 +646,17 @@ export default function UserAnalyticsPage() {
                 </div>
               )}
             </div>
+
+            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-200 rounded-2xl p-6">
+              <div className="text-sm text-gray-700 font-semibold">Summary</div>
+              <div className="mt-3 space-y-2 text-sm">
+                <Row label="Clicks" value={Number(summary.clicksTotal || 0).toLocaleString('en-IN')} />
+                <Row label="Conversions" value={Number(summary.conversionsTotal || 0).toLocaleString('en-IN')} />
+                <Row label="Commission" value={fmtINR(summary.commissionTotal || 0)} />
+                <Row label="Approved" value={fmtINR(summary.approvedAmount || 0)} />
+                <Row label="Pending" value={fmtINR(summary.pendingAmount || 0)} />
+              </div>
+            </div>
           </div>
 
         </div>
@@ -624,6 +666,15 @@ export default function UserAnalyticsPage() {
         .line-clamp-1 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
         .line-clamp-2 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
       `}</style>
+    </div>
+  )
+}
+
+function Row({ label, value }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="text-gray-600">{label}</div>
+      <div className="font-bold text-gray-900">{value}</div>
     </div>
   )
 }
@@ -661,7 +712,7 @@ const ClockIcon = ({ className = 'w-5 h-5' }) => (
   </svg>
 )
 
-const CheckCircle = ({ className = 'w-5 h-5' }) => (
+const CheckCircleIcon = ({ className = 'w-5 h-5' }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>

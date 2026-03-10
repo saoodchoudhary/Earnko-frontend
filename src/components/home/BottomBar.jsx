@@ -28,7 +28,7 @@ export default function BottomBar() {
     { href: '/', label: 'Dashboard', icon: <Home className="w-5 h-5" /> },
     { href: '/dashboard/analytics', label: 'Analytics', icon: <BarChart3 className="w-5 h-5" /> },
     { href: '/dashboard/affiliate', label: 'Create', icon: <Zap className="w-5 h-5" /> },
-    { href: '/dashboard/wallet', label: 'Wallet', icon: <Wallet className="w-5 h-5" /> },
+    { href: '/dashboard/withdraw', label: 'Wallet', icon: <Wallet className="w-5 h-5" /> },
     { href: '/dashboard', label: 'More', icon: <Grid className="w-5 h-5" /> },
   ];
 
