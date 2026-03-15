@@ -69,7 +69,6 @@ function utcRangeFromInputs(fromStr, toStr) {
 }
 
 function daysBetweenInclusiveUTC(from, to) {
-  // from and to are Date in UTC boundaries
   const a = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate())
   const b = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate())
   return Math.floor((b - a) / (1000 * 60 * 60 * 24)) + 1
@@ -81,6 +80,13 @@ function safeArray(v) {
 
 function fmtINR(n) {
   return `₹${Number(n || 0).toLocaleString('en-IN')}`
+}
+
+function inRange(dateLike, from, to) {
+  if (!dateLike || !from || !to) return false
+  const d = new Date(dateLike).getTime()
+  if (Number.isNaN(d)) return false
+  return d >= from.getTime() && d <= to.getTime()
 }
 
 export default function UserAnalyticsPage() {
@@ -109,11 +115,7 @@ export default function UserAnalyticsPage() {
   })
   const [daily, setDaily] = useState([])
 
-  /**
-   * ✅ UPDATED:
-   * Old per-link performance used /api/user/links (cuelinks stats).
-   * Now we show generator short URLs via /api/user/short-urls
-   */
+  // short urls
   const [linksLoading, setLinksLoading] = useState(true)
   const [links, setLinks] = useState([])
 
@@ -141,31 +143,33 @@ export default function UserAnalyticsPage() {
     linkPerformanceRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  function buildAnalyticsQuery() {
-    const params = new URLSearchParams()
-
+  /**
+   * ✅ Single source of truth: active range for whole page
+   * Everything should use this (analytics + cards + right summary + links).
+   */
+  function getActiveRange() {
     if (mode === 'current_month') {
-      params.set('from', startOfMonth().toISOString())
-      params.set('to', new Date().toISOString())
-      return params
+      return { from: startOfMonth(), to: new Date() }
     }
-
     if (mode === 'last_month') {
-      params.set('from', startOfLastMonth().toISOString())
-      params.set('to', endOfLastMonth().toISOString())
-      return params
+      return { from: startOfLastMonth(), to: endOfLastMonth() }
     }
 
-    // custom uses appliedCustom (stable)
+    // custom (appliedCustom)
     const r = utcRangeFromInputs(appliedCustom.from, appliedCustom.to)
-    if (!r) return params
+    if (!r) return null
 
-    // max 90 days check (safe)
     const days = daysBetweenInclusiveUTC(r.from, r.to)
-    if (days > 90) return params
+    if (days > 90) return null
 
-    params.set('from', r.from.toISOString())
-    params.set('to', r.to.toISOString())
+    return { from: r.from, to: r.to }
+  }
+
+  function buildAnalyticsQuery(range) {
+    const params = new URLSearchParams()
+    if (!range?.from || !range?.to) return params
+    params.set('from', range.from.toISOString())
+    params.set('to', range.to.toISOString())
     return params
   }
 
@@ -180,28 +184,15 @@ export default function UserAnalyticsPage() {
         return
       }
 
-      // block invalid custom applied range
-      if (mode === 'custom') {
-        const r = utcRangeFromInputs(appliedCustom.from, appliedCustom.to)
-        if (!r) {
-          setDaily([])
-          return
-        }
-        const days = daysBetweenInclusiveUTC(r.from, r.to)
-        if (days > 90) {
-          toast.error('Custom range can be maximum 90 days')
-          setDaily([])
-          return
-        }
-      }
-
-      const qs = buildAnalyticsQuery()
-      if (!qs.get('from') || !qs.get('to')) {
-        // avoid hitting API with empty query
+      const range = getActiveRange()
+      if (!range) {
+        if (mode === 'custom') toast.error('Invalid range (max 90 days)')
+        setSummary({ clicksTotal: 0, conversionsTotal: 0, commissionTotal: 0, pendingAmount: 0, approvedAmount: 0 })
         setDaily([])
         return
       }
 
+      const qs = buildAnalyticsQuery(range)
       const res = await fetch(`${base}/api/user/analytics?${qs.toString()}`, {
         signal,
         headers: { Authorization: `Bearer ${token}` }
@@ -228,11 +219,8 @@ export default function UserAnalyticsPage() {
   }
 
   /**
-   * ✅ UPDATED: load generator short links
-   * GET /api/user/short-urls?limit=50&page=1
-   *
-   * Expected backend response:
-   * { success:true, data:{ items:[{code, shortUrl, provider, clickId, createdAt}], total,... } }
+   * ✅ Load short links and apply SAME RANGE (client-side filter by createdAt)
+   * Because backend /api/user/short-urls doesn't accept from/to.
    */
   const loadLinks = async (signal) => {
     try {
@@ -243,7 +231,13 @@ export default function UserAnalyticsPage() {
         return
       }
 
-      const qs = new URLSearchParams({ limit: '50', page: '1' })
+      const range = getActiveRange()
+      if (!range) {
+        setLinks([])
+        return
+      }
+
+      const qs = new URLSearchParams({ limit: '200', page: '1' })
       const res = await fetch(`${base}/api/user/short-urls?${qs.toString()}`, {
         signal,
         headers: { Authorization: `Bearer ${token}` }
@@ -255,8 +249,12 @@ export default function UserAnalyticsPage() {
         return
       }
 
-      const list = js?.data?.items || []
-      setLinks(Array.isArray(list) ? list : [])
+      const list = safeArray(js?.data?.items)
+
+      // filter by range (createdAt between from and to)
+      const filtered = list.filter((x) => inRange(x?.createdAt, range.from, range.to))
+
+      setLinks(filtered)
     } catch (err) {
       if (err?.name !== 'AbortError') toast.error('Error loading links')
       setLinks([])
@@ -272,7 +270,7 @@ export default function UserAnalyticsPage() {
     if (customFrom > customTo) setCustomTo(customFrom)
   }, [mode, customFrom, customTo])
 
-  // Fetch when mode changes or applied custom changes (not on every date input change)
+  // ✅ Fetch whole page data when range changes
   useEffect(() => {
     const controller = new AbortController()
     loadAnalytics(controller.signal)
@@ -284,14 +282,15 @@ export default function UserAnalyticsPage() {
   const chartData = useMemo(() => safeArray(daily), [daily])
 
   const downloadReport = () => {
+    const range = getActiveRange()
     const report = {
       periodMode: mode,
       customFrom: mode === 'custom' ? appliedCustom.from : null,
       customTo: mode === 'custom' ? appliedCustom.to : null,
       generatedAt: new Date().toISOString(),
+      effectiveRange: range ? { from: range.from.toISOString(), to: range.to.toISOString() } : null,
       summary,
       daily,
-      // include short-urls in export too
       shortUrls: links,
     }
     const dataStr = JSON.stringify(report, null, 2)
@@ -462,7 +461,7 @@ export default function UserAnalyticsPage() {
               </div>
             </div>
 
-            {/* Stats */}
+            {/* Stats (now tied to same range because summary comes from same ranged analytics call) */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <StatCard title="Total Commission" value={fmtINR(summary.commissionTotal || 0)} icon={<DollarSign className="w-5 h-5" />} color="from-purple-500 to-pink-600" />
               <StatCard title="Pending Amount" value={fmtINR(summary.pendingAmount || 0)} icon={<ClockIcon className="w-5 h-5" />} color="from-amber-500 to-orange-600" />
@@ -518,7 +517,7 @@ export default function UserAnalyticsPage() {
                       />
                       <Legend />
                       <Area type="monotone" dataKey="clicks" name="Clicks" stroke="#3b82f6" fill="url(#colorClicks)" strokeWidth={2} />
-                      <Area type="monotone" dataKey="conversions" name="Conversions" stroke="#10b981" fill="url(#colorConversions)" strokeWidth={2} strokeWidth={2} />
+                      <Area type="monotone" dataKey="conversions" name="Conversions" stroke="#10b981" fill="url(#colorConversions)" strokeWidth={2} />
                       <Area type="monotone" dataKey="commission" name="Commission" stroke="#8b5cf6" fill="url(#colorCommission)" strokeWidth={2} />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -526,7 +525,7 @@ export default function UserAnalyticsPage() {
               )}
             </div>
 
-            {/* ✅ Short URL Performance (new endpoint) */}
+            {/* Short Links (now filtered to same range) */}
             <div ref={linkPerformanceRef} className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -535,7 +534,7 @@ export default function UserAnalyticsPage() {
                     Your Short Links
                   </h3>
                   <p className="text-gray-600 text-sm mt-1">
-                    These are the same short URLs generated by “Generate Links” tool (commission-safe).
+                    Short links created in selected time range.
                   </p>
                 </div>
                 <div className="text-sm text-gray-500">
@@ -550,36 +549,25 @@ export default function UserAnalyticsPage() {
               ) : sortedLinks.length === 0 ? (
                 <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-xl">
                   <LinkIcon className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-600">No short links found</p>
-                  <p className="text-xs text-gray-500 mt-1">Generate a link from Dashboard → Generate Links</p>
+                  <p className="text-gray-600">No short links found in this range</p>
+                  <p className="text-xs text-gray-500 mt-1">Try a different time range</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {sortedLinks.map((it, idx) => {
                     const url = it.shortUrl || ''
                     const createdAt = it.createdAt ? new Date(it.createdAt) : null
-                    const provider = it.provider || '-'
-                    const code = it.code || '-'
 
                     return (
-                      <div key={it.code || idx} className="border border-gray-200 rounded-2xl p-4 hover:shadow-sm transition-shadow bg-gradient-to-b from-white to-gray-50">
+                      <div key={it._id || it.code || idx} className="border border-gray-200 rounded-2xl p-4 hover:shadow-sm transition-shadow bg-gradient-to-b from-white to-gray-50">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="text-xs text-gray-500">Short URL</div>
                             <div className="text-sm text-gray-700 break-all line-clamp-2 sm:line-clamp-1">
                               {url || '-'}
                             </div>
-
-                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-                              {/* <span className="font-mono bg-gray-100 border border-gray-200 px-2 py-1 rounded">
-                                code: {code}
-                              </span>
-                              <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded">
-                                provider: {provider}
-                              </span> */}
-                              <span className="text-gray-500">
-                                {createdAt ? createdAt.toLocaleString() : ''}
-                              </span>
+                            <div className="mt-2 text-[11px] text-gray-500">
+                              {createdAt ? createdAt.toLocaleString() : ''}
                             </div>
                           </div>
 
@@ -608,13 +596,16 @@ export default function UserAnalyticsPage() {
                             )}
                           </div>
                         </div>
-
-                        
                       </div>
                     )
                   })}
                 </div>
               )}
+
+              <div className="mt-4 text-xs text-gray-500 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-green-600" />
+                Showing links only for the selected time range.
+              </div>
             </div>
           </div>
 

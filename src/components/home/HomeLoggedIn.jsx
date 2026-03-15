@@ -93,8 +93,7 @@ export default function HomeLoggedIn() {
       </div>
 
       <div className="relative">
-        <BannerCarousel />
-        
+        <BannerCarousel />        
       </div>
 
       <StoreStrip base={base} stores={stores} title="Featured Partners" />

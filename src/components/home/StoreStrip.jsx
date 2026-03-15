@@ -47,7 +47,7 @@ export default function StoreStrip({ base, stores = [], title = 'Featured Partne
     return token;
   };
 
-  // EXACTLY like Stores page: POST /api/affiliate/link-from-url
+  // POST /api/affiliate/link-from-url => copy SHORT URL (shareUrl)
   const generateStoreLink = async (store) => {
     const token = requireLogin();
     if (!token) return;
@@ -84,11 +84,18 @@ export default function StoreStrip({ base, stores = [], title = 'Featured Partne
         throw new Error(js?.message || 'Failed to generate link');
       }
 
-      const link = js?.data?.link;
-      if (!link) throw new Error('No provider link returned');
+      // ✅ Prefer short url
+      const shortUrl = js?.data?.shareUrl || js?.data?.shortUrl;
 
-      await navigator.clipboard.writeText(link);
-      toast.success('Store link copied!');
+      // fallback only if backend didn't send short url
+      const providerLink = js?.data?.link;
+
+      const toCopy = shortUrl || providerLink;
+      if (!toCopy) throw new Error('No link returned');
+
+      await navigator.clipboard.writeText(toCopy);
+
+      toast.success(shortUrl ? 'Short link copied!' : 'Link copied!');
     } catch (err) {
       toast.error(err?.message || 'Failed to generate link');
     } finally {
@@ -177,7 +184,7 @@ export default function StoreStrip({ base, stores = [], title = 'Featured Partne
                           ? 'bg-blue-400 cursor-wait'
                           : 'bg-gradient-to-r from-blue-600 to-cyan-500 hover:shadow-md'
                       }`}
-                      title="Generate affiliate link"
+                      title="Generate affiliate short link"
                     >
                       {isSharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
                       {isSharing ? 'Generating...' : 'Generate'}
