@@ -11,10 +11,6 @@ import {
   Link as LinkIcon, Copy, ExternalLink, Shield, CalendarRange, Check
 } from 'lucide-react'
 
-/**
- * Helpers: safer date handling for date inputs (YYYY-MM-DD)
- * We build UTC boundaries to avoid timezone off-by-one issues.
- */
 function toDateInputValue(d) {
   if (!d) return ''
   const x = new Date(d)
@@ -49,7 +45,6 @@ function endOfLastMonth() {
   return x
 }
 
-// Build UTC range from YYYY-MM-DD input
 function utcRangeFromInputs(fromStr, toStr) {
   if (!fromStr || !toStr) return null
 
@@ -58,7 +53,6 @@ function utcRangeFromInputs(fromStr, toStr) {
 
   if (![fy, fm, fd, ty, tm, td].every(Number.isFinite)) return null
 
-  // UTC start/end (inclusive)
   const from = new Date(Date.UTC(fy, fm - 1, fd, 0, 0, 0, 0))
   const to = new Date(Date.UTC(ty, tm - 1, td, 23, 59, 59, 999))
 
@@ -82,22 +76,12 @@ function fmtINR(n) {
   return `₹${Number(n || 0).toLocaleString('en-IN')}`
 }
 
-function inRange(dateLike, from, to) {
-  if (!dateLike || !from || !to) return false
-  const d = new Date(dateLike).getTime()
-  if (Number.isNaN(d)) return false
-  return d >= from.getTime() && d <= to.getTime()
-}
-
 export default function UserAnalyticsPage() {
-  // 'current_month' | 'last_month' | 'custom'
   const [mode, setMode] = useState('current_month')
 
-  // Custom inputs (string for date input)
   const [customFrom, setCustomFrom] = useState(toDateInputValue(startOfMonth()))
   const [customTo, setCustomTo] = useState(toDateInputValue(new Date()))
 
-  // Applied custom range (so it doesn't refetch on every change)
   const [appliedCustom, setAppliedCustom] = useState(() => ({
     from: toDateInputValue(startOfMonth()),
     to: toDateInputValue(new Date()),
@@ -115,7 +99,7 @@ export default function UserAnalyticsPage() {
   })
   const [daily, setDaily] = useState([])
 
-  // short urls
+  // short urls performance
   const [linksLoading, setLinksLoading] = useState(true)
   const [links, setLinks] = useState([])
 
@@ -143,10 +127,6 @@ export default function UserAnalyticsPage() {
     linkPerformanceRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  /**
-   * ✅ Single source of truth: active range for whole page
-   * Everything should use this (analytics + cards + right summary + links).
-   */
   function getActiveRange() {
     if (mode === 'current_month') {
       return { from: startOfMonth(), to: new Date() }
@@ -155,7 +135,6 @@ export default function UserAnalyticsPage() {
       return { from: startOfLastMonth(), to: endOfLastMonth() }
     }
 
-    // custom (appliedCustom)
     const r = utcRangeFromInputs(appliedCustom.from, appliedCustom.to)
     if (!r) return null
 
@@ -219,8 +198,7 @@ export default function UserAnalyticsPage() {
   }
 
   /**
-   * ✅ Load short links and apply SAME RANGE (client-side filter by createdAt)
-   * Because backend /api/user/short-urls doesn't accept from/to.
+   * ✅ Load short links performance for SAME RANGE (server-side)
    */
   const loadLinks = async (signal) => {
     try {
@@ -237,8 +215,12 @@ export default function UserAnalyticsPage() {
         return
       }
 
-      const qs = new URLSearchParams({ limit: '200', page: '1' })
-      const res = await fetch(`${base}/api/user/short-urls?${qs.toString()}`, {
+      const qs = new URLSearchParams()
+      qs.set('from', range.from.toISOString())
+      qs.set('to', range.to.toISOString())
+      qs.set('limit', '200')
+
+      const res = await fetch(`${base}/api/user/short-urls/performance?${qs.toString()}`, {
         signal,
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -250,11 +232,7 @@ export default function UserAnalyticsPage() {
       }
 
       const list = safeArray(js?.data?.items)
-
-      // filter by range (createdAt between from and to)
-      const filtered = list.filter((x) => inRange(x?.createdAt, range.from, range.to))
-
-      setLinks(filtered)
+      setLinks(list)
     } catch (err) {
       if (err?.name !== 'AbortError') toast.error('Error loading links')
       setLinks([])
@@ -263,14 +241,12 @@ export default function UserAnalyticsPage() {
     }
   }
 
-  // Auto-fix customTo when customFrom > customTo (UX)
   useEffect(() => {
     if (mode !== 'custom') return
     if (!customFrom || !customTo) return
     if (customFrom > customTo) setCustomTo(customFrom)
   }, [mode, customFrom, customTo])
 
-  // ✅ Fetch whole page data when range changes
   useEffect(() => {
     const controller = new AbortController()
     loadAnalytics(controller.signal)
@@ -340,7 +316,6 @@ export default function UserAnalyticsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
-      {/* Header */}
       <section className="bg-gradient-to-r from-blue-600 to-cyan-500 text-white">
         <div className="container mx-auto px-4 py-8">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -385,12 +360,9 @@ export default function UserAnalyticsPage() {
         </div>
       </section>
 
-      {/* Main */}
       <div className="container mx-auto px-4 py-6">
         <div className="grid xl:grid-cols-3 gap-6">
-          {/* Left */}
           <div className="xl:col-span-2 space-y-6">
-            {/* Filters */}
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex flex-col gap-4">
                 <div className="flex items-start justify-between gap-4">
@@ -461,14 +433,12 @@ export default function UserAnalyticsPage() {
               </div>
             </div>
 
-            {/* Stats (now tied to same range because summary comes from same ranged analytics call) */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <StatCard title="Total Commission" value={fmtINR(summary.commissionTotal || 0)} icon={<DollarSign className="w-5 h-5" />} color="from-purple-500 to-pink-600" />
               <StatCard title="Pending Amount" value={fmtINR(summary.pendingAmount || 0)} icon={<ClockIcon className="w-5 h-5" />} color="from-amber-500 to-orange-600" />
               <StatCard title="Approved Amount" value={fmtINR(summary.approvedAmount || 0)} icon={<CheckCircleIcon className="w-5 h-5" />} color="from-indigo-500 to-purple-600" />
             </div>
 
-            {/* Chart */}
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -525,7 +495,7 @@ export default function UserAnalyticsPage() {
               )}
             </div>
 
-            {/* Short Links (now filtered to same range) */}
+            {/* Short Links performance */}
             <div ref={linkPerformanceRef} className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -534,7 +504,7 @@ export default function UserAnalyticsPage() {
                     Your Short Links
                   </h3>
                   <p className="text-gray-600 text-sm mt-1">
-                    Short links created in selected time range.
+                    Clicks & earnings for links in selected time range.
                   </p>
                 </div>
                 <div className="text-sm text-gray-500">
@@ -544,7 +514,7 @@ export default function UserAnalyticsPage() {
 
               {linksLoading ? (
                 <div className="space-y-2">
-                  {[...Array(4)].map((_, i) => (<div key={i} className="h-16 bg-gray-100 rounded-lg animate-pulse" />))}
+                  {[...Array(4)].map((_, i) => (<div key={i} className="h-20 bg-gray-100 rounded-lg animate-pulse" />))}
                 </div>
               ) : sortedLinks.length === 0 ? (
                 <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-xl">
@@ -559,7 +529,7 @@ export default function UserAnalyticsPage() {
                     const createdAt = it.createdAt ? new Date(it.createdAt) : null
 
                     return (
-                      <div key={it._id || it.code || idx} className="border border-gray-200 rounded-2xl p-4 hover:shadow-sm transition-shadow bg-gradient-to-b from-white to-gray-50">
+                      <div key={it.code || idx} className="border border-gray-200 rounded-2xl p-4 hover:shadow-sm transition-shadow bg-gradient-to-b from-white to-gray-50">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="text-xs text-gray-500">Short URL</div>
@@ -596,6 +566,22 @@ export default function UserAnalyticsPage() {
                             )}
                           </div>
                         </div>
+
+                        {/* ✅ performance rows */}
+                        <div className="mt-4 grid grid-cols-3 gap-2">
+                          <MiniStat label="Clicks" value={Number(it.clicks || 0).toLocaleString('en-IN')} />
+                          <MiniStat label="Conv." value={Number(it.conversionsTotal || 0).toLocaleString('en-IN')} />
+                          <MiniStat label="Earning" value={fmtINR(it.commissionTotal || 0)} />
+                        </div>
+
+                        {/* <div className="mt-2 grid grid-cols-2 gap-2">
+                          <MiniStat label="Approved" value={`${Number(it.approvedConversions || 0)} / ${fmtINR(it.approvedCommission || 0)}`} />
+                          <MiniStat label="Pending" value={`${Number(it.pendingConversions || 0)} / ${fmtINR(it.pendingCommission || 0)}`} />
+                        </div> */}
+
+                        {/* <div className="mt-2 text-[11px] text-gray-500">
+                          Provider: <span className="font-semibold">{it.provider || '-'}</span>
+                        </div> */}
                       </div>
                     )
                   })}
@@ -604,12 +590,11 @@ export default function UserAnalyticsPage() {
 
               <div className="mt-4 text-xs text-gray-500 flex items-center gap-2">
                 <Shield className="w-4 h-4 text-green-600" />
-                Showing links only for the selected time range.
+                Showing link performance only for the selected time range.
               </div>
             </div>
           </div>
 
-          {/* Right */}
           <div className="space-y-6">
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <h3 className="font-bold text-gray-900 mb-4">Quick Actions</h3>
@@ -657,6 +642,15 @@ export default function UserAnalyticsPage() {
         .line-clamp-1 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
         .line-clamp-2 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
       `}</style>
+    </div>
+  )
+}
+
+function MiniStat({ label, value }) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+      <div className="text-[11px] text-gray-500">{label}</div>
+      <div className="text-sm font-extrabold text-gray-900">{value}</div>
     </div>
   )
 }
