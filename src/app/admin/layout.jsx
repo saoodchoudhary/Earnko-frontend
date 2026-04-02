@@ -165,6 +165,7 @@ export default function AdminLayout({ children }) {
         { label: 'All Transactions', href: '/admin/transactions', icon: <ClipboardList className="w-4 h-4" /> },
         { label: 'Commissions', href: '/admin/commissions', icon: <DollarSign className="w-4 h-4" /> },
         { label: 'Payouts', href: '/admin/payouts', icon: <CreditCard className="w-4 h-4" /> },
+        { label: "Urls Tracking", href: '/admin/short-urls', icon: <Link2 className="w-4 h-4" /> },
         { label: 'Clicks Tracking', href: '/admin/clicks', icon: <MousePointer className="w-4 h-4" /> },
       ]
     },

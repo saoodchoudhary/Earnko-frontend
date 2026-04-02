@@ -54,11 +54,10 @@ export default function AffiliateToolsPage() {
   };
 
   const toastApiError = (res, data) => {
-    // inside toastApiError
-if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
-  toast.error('Store not detected for this URL. Please fix store baseUrl/trackingUrl in admin.');
-  return;
-}
+    if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
+      toast.error('Store not detected for this URL. Please fix store baseUrl/trackingUrl in admin.');
+      return;
+    }
     if (res?.status === 409 && data?.code === 'campaign_approval_required') {
       toast.error('Approval required');
       return;
@@ -77,21 +76,22 @@ if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
       const res = await fetch(`${base}/api/affiliate/link-from-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
-        body: JSON.stringify({ url: singleUrl.trim() }) // storeId not sent (Option A backend infers)
+        body: JSON.stringify({ url: singleUrl.trim() })
       });
       const data = await safeJson(res);
       if (!res.ok) { toastApiError(res, data); return; }
 
-      const link = data?.data?.link || null;
-      const shareUrlFromApi = data?.data?.shareUrl || null;
+      const link = data?.data?.link || null; // ✅ Affiliate link (provider link)
+      const shareUrlFromApi = data?.data?.shareUrl || null; // ✅ Short/Share URL
 
       const payload = {
         inputUrl: singleUrl.trim(),
         link,
-        shareUrl: shareUrlFromApi || link,
+        shareUrl: shareUrlFromApi || null,
         subid: data?.data?.subid || null,
         status: 'ok'
       };
+
       setSingleResult(payload);
       toast.success('Link generated');
     } catch {
@@ -115,7 +115,7 @@ if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
       const res = await fetch(`${base}/api/affiliate/link-from-url/bulk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
-        body: JSON.stringify({ urls }) // storeId not sent (Option A backend infers per-url)
+        body: JSON.stringify({ urls })
       });
       const data = await safeJson(res);
       if (!res.ok) { toastApiError(res, data); return; }
@@ -129,7 +129,7 @@ if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
             inputUrl: r.inputUrl,
             status: 'ok',
             link,
-            shareUrl: shareUrlFromApi || link,
+            shareUrl: shareUrlFromApi || null,
             subid: r?.data?.subid || null,
             message: null
           };
@@ -140,6 +140,7 @@ if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
       });
 
       setBulkResults(mapped);
+
       const okCount = mapped.filter(r => r.status === 'ok').length;
       const errCount = mapped.filter(r => r.status === 'error').length;
       const anyApproval = list.some(r => !r.success && r.code === 'campaign_approval_required');
@@ -153,7 +154,26 @@ if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
   };
 
   const clearAll = () => {
-    setSingleUrl(''); setSingleResult(null); setBulkText(''); setBulkResults([]);
+    setSingleUrl('');
+    setSingleResult(null);
+    setBulkText('');
+    setBulkResults([]);
+  };
+
+  const copyAllShareLinks = () => {
+    const all = bulkResults
+      .filter(r => r.status === 'ok' && r.shareUrl)
+      .map(r => r.shareUrl)
+      .join('\n');
+    if (all) copyText(all, 'All short/share links copied');
+  };
+
+  const copyAllAffiliateLinks = () => {
+    const all = bulkResults
+      .filter(r => r.status === 'ok' && r.link)
+      .map(r => r.link)
+      .join('\n');
+    if (all) copyText(all, 'All affiliate links copied');
   };
 
   return (
@@ -170,7 +190,10 @@ if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <button onClick={clearAll} className="px-4 py-2 bg-white/20 rounded-xl hover:bg-white/30 transition-all flex items-center gap-2">
+              <button
+                onClick={clearAll}
+                className="px-4 py-2 bg-white/20 rounded-xl hover:bg-white/30 transition-all flex items-center gap-2"
+              >
                 <RefreshCw className="w-4 h-4" /> Reset
               </button>
             </div>
@@ -224,8 +247,11 @@ if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
             {singleResult && (
               <div className="mt-6 space-y-4">
                 <ResultRow title="Input URL" value={singleResult.inputUrl} />
+                {/* ✅ Short link first */}
                 <ResultRow title="Short/Share URL" value={singleResult.shareUrl} canOpen canCopy emphasis />
-                {/* <ResultRow title="Affiliate Link" value={singleResult.link} canOpen canCopy /> */}
+                {/* ✅ Then affiliate link below it */}
+                <ResultRow title="Affiliate Link" value={singleResult.link} canOpen canCopy />
+
                 <div className="flex items-center gap-2 text-xs text-gray-600">
                   <Shield className="w-3.5 h-3.5 text-green-600" />
                   Strict mode: If campaign is paused, link wouldn't be generated.
@@ -237,7 +263,6 @@ if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
 
         {isMulti && (
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-            {/* ...same as your existing multi UI... */}
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -275,18 +300,21 @@ if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
               </button>
 
               {bulkResults.length > 0 && bulkResults.some(r => r.status === 'ok') && (
-                <button
-                  onClick={() => {
-                    const all = bulkResults
-                      .filter(r => r.status === 'ok' && r.shareUrl)
-                      .map(r => r.shareUrl)
-                      .join('\n');
-                    if (all) copyText(all, 'All links copied');
-                  }}
-                  className="px-4 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                >
-                  <Copy className="w-4 h-4" />Copy all Links
-                </button>
+                <>
+                  <button
+                    onClick={copyAllShareLinks}
+                    className="px-4 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                  >
+                    <Copy className="w-4 h-4" />Copy all Short Links
+                  </button>
+
+                  <button
+                    onClick={copyAllAffiliateLinks}
+                    className="px-4 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                  >
+                    <Copy className="w-4 h-4" />Copy all Affiliate Links
+                  </button>
+                </>
               )}
             </div>
 
@@ -306,18 +334,27 @@ if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="text-[11px] text-gray-500">Input</div>
-                          <div className="text-sm text-gray-800 break-all line-clamp-2 sm:line-clamp-1">{r.inputUrl}</div>
+                          <div className="text-sm text-gray-800 break-all line-clamp-2 sm:line-clamp-1">
+                            {r.inputUrl}
+                          </div>
                         </div>
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${r.status === 'ok' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                          {r.status === 'ok' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
+                            r.status === 'ok' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                          }`}
+                        >
+                          {r.status === 'ok'
+                            ? <CheckCircle2 className="w-3.5 h-3.5" />
+                            : <AlertTriangle className="w-3.5 h-3.5" />
+                          }
                           {r.status === 'ok' ? 'OK' : 'Error'}
                         </span>
                       </div>
 
                       {r.status === 'ok' ? (
-                        <div className="mt-3 grid grid-cols-1  gap-3">
-                          {/* <ResultRow title="Affiliate Link" value={r.link} canOpen canCopy compact /> */}
+                        <div className="mt-3 grid grid-cols-1 gap-3">
                           <ResultRow title="Short/Share URL" value={r.shareUrl} canOpen canCopy compact emphasis />
+                          <ResultRow title="Affiliate Link" value={r.link} canOpen canCopy compact />
                         </div>
                       ) : (
                         <div className="mt-2 text-xs text-red-600">{r.message || 'Failed to generate'}</div>
@@ -332,7 +369,7 @@ if (res?.status === 400 && data?.code === 'store_not_found_for_url') {
 
         <div className="mt-6 text-xs text-gray-500 flex items-center gap-2">
           <Shield className="w-4 h-4 text-green-600" />
-          Strict mode: If campaign is paused, link wouldn't be generated.
+          Strict mode: If campaign is paused, link wouldn&apos;t be generated.
         </div>
       </div>
 
@@ -359,7 +396,7 @@ function ResultRow({ title, value, canCopy, canOpen, emphasis, compact = false }
           {canCopy && (
             <button
               onClick={async () => {
-                try { await navigator.clipboard.writeText(value); window?.toast ? window.toast.success('Copied') : toast.success('Copied'); }
+                try { await navigator.clipboard.writeText(value); toast.success('Copied'); }
                 catch { toast.error('Copy failed'); }
               }}
               className="px-2 py-1.5 rounded-md hover:bg-white border border-gray-300 text-gray-700 text-xs flex items-center gap-1"
