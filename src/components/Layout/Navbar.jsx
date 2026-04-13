@@ -142,7 +142,7 @@ export default function Navbar() {
   const navLinks = [
     // { href: '/offers', label: 'Top Offers', icon: <Gift className="w-4 h-4" />, active: pathname.startsWith('/offers') },
     { href: '/stores', label: 'Stores', icon: <Store className="w-4 h-4" />, active: pathname.startsWith('/stores') },
-    { href: '/products', label: 'Products', icon: <Sparkles className="w-4 h-4" />, active: pathname.startsWith('/products') },
+    // { href: '/products', label: 'Products', icon: <Sparkles className="w-4 h-4" />, active: pathname.startsWith('/products') },
     { href: '/contact', label: 'Contact Us', icon: <CircleQuestionMark className="w-4 h-4" />, active: pathname.startsWith('/contact') },
   ];
 
