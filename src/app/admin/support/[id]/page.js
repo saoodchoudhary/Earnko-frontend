@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation'
 import { toast } from 'react-hot-toast'
 import {
   ChevronLeft, Send, CheckCircle2, MessageSquare, User,
-  Calendar, Clock, Tag, AlertCircle, RefreshCw, Shield,
+  Calendar, Tag, AlertCircle, RefreshCw, Shield,
   Mail, Phone, Globe, Copy, Ban
 } from 'lucide-react'
 import { getSocket, reconnectSocket } from '@/lib/socket'
@@ -24,6 +24,7 @@ export default function AdminSupportDetailPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
+  const [mailing, setMailing] = useState(false) // ✅ NEW
   const [message, setMessage] = useState('')
   const [status, setStatus] = useState('open')
   const [userDetails, setUserDetails] = useState(null)
@@ -36,6 +37,7 @@ export default function AdminSupportDetailPage() {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
     return { Authorization: token ? `Bearer ${token}` : '' }
   }
+
   const handleHttpError = async (res) => {
     let message = 'Request failed'
     try {
@@ -46,6 +48,7 @@ export default function AdminSupportDetailPage() {
     if (res.status === 403) message = 'Forbidden. Admin access required.'
     throw new Error(message)
   }
+
   const ensureEnvConfigured = () => {
     if (!base && !envWarned.current) {
       envWarned.current = true
@@ -57,10 +60,13 @@ export default function AdminSupportDetailPage() {
     try {
       ensureEnvConfigured()
       setLoading(true)
+
       const res = await fetch(`${base}/api/admin/support/tickets/${id}`, {
-        signal, headers: getHeaders()
+        signal,
+        headers: getHeaders()
       })
       if (!res.ok) await handleHttpError(res)
+
       const data = await res.json()
       const ticketData = data?.data?.ticket || null
       setTicket(ticketData)
@@ -76,12 +82,12 @@ export default function AdminSupportDetailPage() {
             const userData = await userRes.json()
             setUserDetails(userData?.data?.user || null)
           }
-        } catch (error) {
+        } catch {
           // silent
         }
       }
     } catch (err) {
-      if (err.name !== 'AbortError') toast.error(err.message || 'Error loading')
+      if (err?.name !== 'AbortError') toast.error(err?.message || 'Error loading')
     } finally {
       setLoading(false)
     }
@@ -99,6 +105,7 @@ export default function AdminSupportDetailPage() {
     const onConnect = () => {
       try { sock.emit('support:join', { ticketId: id }) } catch {}
     }
+
     const onMessage = (payload) => {
       if (payload?.ticketId !== id) return
       setTicket((prev) => {
@@ -108,6 +115,7 @@ export default function AdminSupportDetailPage() {
         return { ...prev, replies, updatedAt: payload.reply?.createdAt || prev.updatedAt }
       })
     }
+
     const onStatus = (payload) => {
       if (payload?.ticketId !== id) return
       setTicket((prev) => prev ? ({ ...prev, status: payload.status, updatedAt: payload.updatedAt || prev.updatedAt }) : prev)
@@ -128,7 +136,6 @@ export default function AdminSupportDetailPage() {
   }, [id])
 
   useEffect(() => {
-    // Scroll to bottom when new messages arrive
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [ticket?.replies])
 
@@ -138,20 +145,23 @@ export default function AdminSupportDetailPage() {
     try {
       ensureEnvConfigured()
       setSending(true)
+
       const res = await fetch(`${base}/api/admin/support/tickets/${id}/reply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getHeaders() },
         body: JSON.stringify({ message: message.trim() })
       })
       if (!res.ok) await handleHttpError(res)
+
       const js = await res.json()
       const updated = js?.data?.ticket
       if (!updated) throw new Error('No ticket returned from backend')
+
       setTicket(updated)
       setMessage('')
       toast.success('Reply sent successfully')
     } catch (err) {
-      toast.error(err.message || 'Failed to send reply')
+      toast.error(err?.message || 'Failed to send reply')
     } finally {
       setSending(false)
     }
@@ -162,29 +172,59 @@ export default function AdminSupportDetailPage() {
     try {
       ensureEnvConfigured()
       setSaving(true)
+
       const res = await fetch(`${base}/api/admin/support/tickets/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...getHeaders() },
         body: JSON.stringify({ status })
       })
       if (!res.ok) await handleHttpError(res)
+
       const js = await res.json()
       const updated = js?.data?.ticket
-      if (!updated || updated.status !== status) {
-        throw new Error('Status update did not persist')
-      }
+      if (!updated || updated.status !== status) throw new Error('Status update did not persist')
+
       setTicket(updated)
       toast.success('Status updated successfully')
     } catch (err) {
-      toast.error(err.message || 'Failed to update status')
+      toast.error(err?.message || 'Failed to update status')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const emailFullChatToUser = async () => {
+    if (!id) return
+    if (!ticket?.user?.email) {
+      toast.error('User email not available')
+      return
+    }
+    const ok = confirm(`Send full chat transcript to:\n${ticket.user.email}\n\nProceed?`)
+    if (!ok) return
+
+    try {
+      ensureEnvConfigured()
+      setMailing(true)
+
+      const res = await fetch(`${base}/api/admin/support/tickets/${id}/email-user`, {
+        method: 'POST',
+        headers: { ...getHeaders() }
+      })
+      if (!res.ok) await handleHttpError(res)
+
+      const js = await res.json().catch(() => ({}))
+      toast.success(js?.message || 'Email sent to user')
+    } catch (err) {
+      toast.error(err?.message || 'Failed to email user')
+    } finally {
+      setMailing(false)
     }
   }
 
   const refreshTicket = () => {
     const controller = new AbortController()
     load(controller.signal)
+    toast.success('Refreshed')
   }
 
   const copyTicketId = () => {
@@ -219,12 +259,34 @@ export default function AdminSupportDetailPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <button onClick={refreshTicket} className="p-2 rounded-lg hover:bg-gray-100 transition-colors" title="Refresh">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={refreshTicket}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                title="Refresh"
+              >
                 <RefreshCw className="w-5 h-5 text-gray-600" />
               </button>
-              <button onClick={copyTicketId} className="p-2 rounded-lg hover:bg-gray-100 transition-colors" title="Copy Ticket ID">
+
+              <button
+                onClick={copyTicketId}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                title="Copy Ticket ID"
+              >
                 <Copy className="w-5 h-5 text-gray-600" />
+              </button>
+
+              {/* ✅ NEW: email transcript button */}
+              <button
+                onClick={emailFullChatToUser}
+                disabled={mailing || !ticket?.user?.email}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50"
+                title={ticket?.user?.email ? 'Email full chat to user' : 'User email not available'}
+              >
+                <Mail className="w-4 h-4 text-gray-700" />
+                <span className="text-sm font-medium text-gray-800">
+                  {mailing ? 'Sending…' : 'Email Chat'}
+                </span>
               </button>
             </div>
           </div>
@@ -235,8 +297,8 @@ export default function AdminSupportDetailPage() {
       <div className="container mx-auto px-4">
         {loading ? (
           <div className="space-y-6 py-6">
-            <div className="h-8 bg-gray-200 rounded-lg animate-pulse w-1/3"></div>
-            <div className="h-64 bg-gray-200 rounded-lg animate-pulse"></div>
+            <div className="h-8 bg-gray-200 rounded-lg animate-pulse w-1/3" />
+            <div className="h-64 bg-gray-200 rounded-lg animate-pulse" />
           </div>
         ) : !ticket ? (
           <div className="text-center py-12">
@@ -253,7 +315,7 @@ export default function AdminSupportDetailPage() {
           </div>
         ) : (
           <div className="grid lg:grid-cols-3 gap-6 pt-6">
-            {/* Left Column - Conversation (reply section fixed inside chat only) */}
+            {/* Left Column - Conversation */}
             <div className="lg:col-span-2 space-y-6">
               {/* Ticket Header */}
               <div className="bg-white border border-gray-200 rounded-xl p-6">
@@ -286,7 +348,7 @@ export default function AdminSupportDetailPage() {
 
                   <div className="flex flex-col items-end gap-3">
                     <div className={`px-3 py-1.5 rounded-full border text-xs font-medium ${
-                      STATUS.find(s => s.value === ticket.status)?.color || 'bg-gray-100 text-gray-600'
+                      STATUS.find(s => s.value === ticket.status)?.color || 'bg-gray-100 text-gray-600 border-gray-200'
                     }`}>
                       {STATUS.find(s => s.value === ticket.status)?.label || ticket.status}
                     </div>
@@ -297,9 +359,8 @@ export default function AdminSupportDetailPage() {
                 </div>
               </div>
 
-              {/* Conversation card with sticky bottom reply inside chat only */}
+              {/* Conversation card */}
               <div className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col">
-                {/* Header */}
                 <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                   <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                     <MessageSquare className="w-5 h-5 text-gray-800" />
@@ -310,9 +371,7 @@ export default function AdminSupportDetailPage() {
                   </div>
                 </div>
 
-                {/* Scrollable conversation messages */}
                 <div className="px-6 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
-                  {/* Initial Message */}
                   <MessageBubble
                     by="user"
                     name={ticket.user?.name || 'User'}
@@ -321,7 +380,6 @@ export default function AdminSupportDetailPage() {
                     isInitial={true}
                   />
 
-                  {/* Replies */}
                   {(ticket.replies || []).map((r, idx) => (
                     <MessageBubble
                       key={idx}
@@ -335,7 +393,6 @@ export default function AdminSupportDetailPage() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Sticky reply bar fixed inside chat card only */}
                 <div className="px-6 py-3 border-t border-gray-200 bg-white sticky bottom-0">
                   <div className="flex items-start gap-3">
                     <textarea
@@ -362,7 +419,7 @@ export default function AdminSupportDetailPage() {
               </div>
             </div>
 
-            {/* Right Column - Details & Actions (unchanged, not fixed) */}
+            {/* Right Column */}
             <div className="space-y-6">
               {/* User Details */}
               <div className="bg-white border border-gray-200 rounded-xl p-6">
@@ -399,7 +456,9 @@ export default function AdminSupportDetailPage() {
 
                     <div className="flex items-center gap-2 text-sm">
                       <Globe className="w-4 h-4 text-gray-500" />
-                      <span className="text-gray-700">User since {new Date(ticket.user?.createdAt || ticket.createdAt).toLocaleDateString()}</span>
+                      <span className="text-gray-700">
+                        User since {new Date(ticket.user?.createdAt || ticket.createdAt).toLocaleDateString()}
+                      </span>
                     </div>
                   </div>
 
@@ -409,6 +468,17 @@ export default function AdminSupportDetailPage() {
                   >
                     View Full Profile
                   </Link>
+
+                  {/* ✅ NEW: also place email button here for convenience */}
+                  <button
+                    onClick={emailFullChatToUser}
+                    disabled={mailing || !ticket?.user?.email}
+                    className="w-full py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                    title={ticket?.user?.email ? 'Email transcript to user' : 'User email not available'}
+                  >
+                    <Mail className="w-4 h-4" />
+                    {mailing ? 'Sending Email…' : 'Email Full Chat to User'}
+                  </button>
                 </div>
               </div>
 
@@ -461,7 +531,7 @@ export default function AdminSupportDetailPage() {
                 </div>
               </div>
 
-              {/* Danger section (close ticket) */}
+              {/* Danger section */}
               <div className="bg-white border border-gray-200 rounded-xl p-6">
                 <h3 className="font-bold text-gray-900 mb-3">Danger Zone</h3>
                 <button
@@ -495,7 +565,7 @@ function MessageBubble({ by, name, message, date, isInitial = false }) {
             </span>
           </div>
           <span className={`text-xs ${isAdmin ? 'text-gray-400' : 'text-gray-500'}`}>
-            {new Date(date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+            {date ? new Date(date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}
           </span>
         </div>
 
