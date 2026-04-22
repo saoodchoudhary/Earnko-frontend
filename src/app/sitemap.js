@@ -6,15 +6,15 @@ export default async function sitemap() {
   // Static routes (include dashboard, exclude any admin)
   const staticRoutes = [
     { url: `${baseUrl}/`, changeFrequency: 'daily', priority: 1.0 },
-    { url: `${baseUrl}/stores`, changeFrequency: 'weekly', priority: 0.8 },
+    { url: `${baseUrl}/stores`, changeFrequency: 'weekly', priority: 0.9 },
     { url: `${baseUrl}/products`, changeFrequency: 'daily', priority: 0.9 },
-    { url: `${baseUrl}/dashboard`, changeFrequency: 'weekly', priority: 0.6 },
+    { url: `${baseUrl}/about`, changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${baseUrl}/contact`, changeFrequency: 'monthly', priority: 0.6 },
+    { url: `${baseUrl}/register`, changeFrequency: 'monthly', priority: 0.5 },
     { url: `${baseUrl}/login`, changeFrequency: 'monthly', priority: 0.3 },
-    { url: `${baseUrl}/register`, changeFrequency: 'monthly', priority: 0.3 },
-    { url: `${baseUrl}/about`, changeFrequency: 'weekly', priority: 0.6 },
-    { url: `${baseUrl}/terms`, changeFrequency: 'monthly', priority: 0.3 },
-    { url: `${baseUrl}/privacy`, changeFrequency: 'monthly', priority: 0.3 },
-
+    { url: `${baseUrl}/dashboard`, changeFrequency: 'weekly', priority: 0.5 },
+    { url: `${baseUrl}/terms`, changeFrequency: 'yearly', priority: 0.2 },
+    { url: `${baseUrl}/privacy`, changeFrequency: 'yearly', priority: 0.2 },
   ].map(r => ({ ...r, lastModified: new Date() }));
 
   let dynamicRoutes = [];

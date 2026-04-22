@@ -3,28 +3,43 @@ import { Providers } from '../context/Providers';
 import { Toaster } from 'react-hot-toast';
 import Analytics from '@/components/Analytics';
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.earnko.com';
+
 export const metadata = {
-  // Use your production site URL for absolute OpenGraph/Twitter links
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://www.earnko.com'),
+  metadataBase: new URL(SITE_URL),
 
   title: {
-    default: 'Earnko — Earn by Sharing',
-    template: '%s · Earnko'
+    default: 'Earnko — Earn Money by Sharing Affiliate Links in India',
+    template: '%s | Earnko'
   },
   description:
-    'Earnko is an affiliate marketing platform for creators and shoppers in India to earn commissions and cashback by sharing product links.',
+    'Earnko is India\'s trusted affiliate marketing platform. Generate affiliate links for Flipkart, Myntra, Nykaa & 500+ stores, earn commissions and cashback, and withdraw instantly via UPI.',
   applicationName: 'Earnko',
   keywords: [
     'Earnko',
-    'affiliate',
-    'cashback',
-    'commissions',
-    'links',
-    'UPI',
-    'India',
-    'influencer'
+    'earnko affiliate',
+    'earnko app',
+    'earnko.com',
+    'affiliate marketing India',
+    'earn money online India',
+    'affiliate link generator India',
+    'earn commissions India',
+    'cashback affiliate India',
+    'Flipkart affiliate',
+    'Myntra affiliate',
+    'Nykaa affiliate',
+    'affiliate platform India',
+    'earn by sharing links',
+    'creator monetization India',
+    'UPI earnings',
+    'influencer affiliate platform',
+    'best affiliate platform India',
+    'passive income India',
+    'online paise kamao',
+    'paise kamane wala app',
+    'affiliate marketing kaise kare'
   ],
-  authors: [{ name: 'Earnko' }],
+  authors: [{ name: 'Earnko', url: SITE_URL }],
   creator: 'Earnko',
   publisher: 'Earnko',
 
@@ -48,7 +63,6 @@ export const metadata = {
 
   manifest: '/site.webmanifest',
 
-
   robots: {
     index: true,
     follow: true,
@@ -64,29 +78,29 @@ export const metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_IN',
-    url: process.env.NEXT_PUBLIC_SITE_URL || 'https://www.earnko.com',
-    title: 'Earnko — Earn by Sharing',
+    url: SITE_URL,
+    title: 'Earnko — Earn Money by Sharing Affiliate Links in India',
     siteName: 'Earnko',
     description:
-      'Affiliate marketing platform to earn commissions and cashback on products you love.',
+      'India\'s trusted affiliate marketing platform. Generate links for 500+ stores, earn commissions & cashback, and withdraw via UPI instantly.',
     images: [
       {
-        url: '/images/earnko-logo.png', // place this in /public
+        url: '/images/earnko-logo.png',
         width: 1200,
         height: 630,
-        alt: 'Earnko — Earn by Sharing'
+        alt: 'Earnko — Earn Money by Sharing Affiliate Links in India'
       }
     ]
   },
 
-  // twitter: {
-  //   card: 'summary_large_image',
-  //   title: 'Earnko — Earn by Sharing',
-  //   description:
-  //     'Affiliate marketing platform to earn commissions and cashback on products you love.',
-  //   images: ['/og-image.png'], // place this in /public
-  //   creator: '@earnko'
-  // },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Earnko — Earn Money by Sharing Affiliate Links in India',
+    description:
+      'India\'s trusted affiliate marketing platform. Generate links for 500+ stores, earn commissions & cashback, and withdraw via UPI instantly.',
+    images: ['/images/earnko-logo.png'],
+    creator: '@earnko'
+  },
 
   appleWebApp: {
     capable: true,
@@ -97,9 +111,65 @@ export const metadata = {
   category: 'technology',
 };
 
+const organizationJsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${SITE_URL}/#organization`,
+      name: 'Earnko',
+      url: SITE_URL,
+      logo: {
+        '@type': 'ImageObject',
+        // Square logo used for Google Knowledge Graph / Organization schema
+        url: `${SITE_URL}/images/earnko-logo.png`,
+        width: 512,
+        height: 512
+      },
+      contactPoint: {
+        '@type': 'ContactPoint',
+        email: 'contact@earnko.com',
+        contactType: 'customer support',
+        areaServed: 'IN',
+        availableLanguage: ['English', 'Hindi']
+      },
+      description:
+        'Earnko is India\'s affiliate marketing platform where creators and influencers earn commissions and cashback by sharing product links from 500+ partner stores.',
+      foundingLocation: {
+        '@type': 'Place',
+        addressCountry: 'IN'
+      }
+    },
+    {
+      '@type': 'WebSite',
+      '@id': `${SITE_URL}/#website`,
+      url: SITE_URL,
+      name: 'Earnko',
+      description:
+        'Earn money online in India by sharing affiliate links — commissions, cashback, UPI payouts.',
+      publisher: { '@id': `${SITE_URL}/#organization` },
+      inLanguage: 'en-IN',
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: {
+          '@type': 'EntryPoint',
+          urlTemplate: `${SITE_URL}/stores?q={search_term_string}`
+        },
+        'query-input': 'required name=search_term_string'
+      }
+    }
+  ]
+};
+
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+        />
+      </head>
       <body>
         <Analytics/>
         <Providers>
