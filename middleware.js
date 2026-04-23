@@ -11,6 +11,9 @@ const RESERVED_ROUTES = new Set([
   'terms',
   'terms-and-conditions',
 
+  // ✅ blog (SEO pages)
+  'blog',
+
   // auth / app
   'login',
   'register',
@@ -27,7 +30,6 @@ const RESERVED_ROUTES = new Set([
 ]);
 
 function isLikelyShortCode(code) {
-  // adjust length if needed; your codes look like shortid slices, often 6-10 chars
   if (!code) return false;
   if (code.length < 4 || code.length > 32) return false;
 
@@ -40,6 +42,11 @@ function isLikelyShortCode(code) {
 
 export function middleware(req) {
   const { pathname } = req.nextUrl;
+
+  // ✅ Always allow blog routes (both /blog and /blog/<slug>)
+  if (pathname === '/blog' || pathname.startsWith('/blog/')) {
+    return NextResponse.next();
+  }
 
   // Skip Next internals, API, and static files
   if (
@@ -60,7 +67,7 @@ export function middleware(req) {
 
   const code = segments[0];
 
-  // Skip known/reserved routes so policy pages work when logged out too
+  // Skip known/reserved routes so pages work when logged out too
   if (RESERVED_ROUTES.has(code)) {
     return NextResponse.next();
   }

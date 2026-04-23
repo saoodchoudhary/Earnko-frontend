@@ -24,7 +24,7 @@ body {
   color: #0f172a;
 }
 
-a { color: var(--primary); }
+/* a { color: var(--primary); } */
 
 .btn {
   @apply inline-flex items-center justify-center px-3 py-2 rounded-md border text-sm;
@@ -97,4 +97,315 @@ a { color: var(--primary); }
 .mobile-menu-scroll::-webkit-scrollbar-thumb {
   background-color: #cbd5e1;
   border-radius: 20px;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ════════════════════════════════════════════════════════════
+   .blog-content  —  MDX / markdown prose styles for Earnko
+   Add @import './blog-content.css' inside your globals.css
+   ════════════════════════════════════════════════════════════ */
+
+.blog-content {
+  color: #374151;
+  font-size: 1rem;
+  line-height: 1.85;
+  word-break: break-word;
+}
+
+/* ── Headings ─────────────────────────────────────────────── */
+
+.blog-content h1,
+.blog-content h2,
+.blog-content h3,
+.blog-content h4 {
+  color: #111827;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  scroll-margin-top: 88px;
+}
+
+.blog-content h1 {
+  font-size: 2rem;
+  margin: 0 0 1.5rem;
+}
+
+.blog-content h2 {
+  font-size: 1.45rem;
+  margin: 2.75rem 0 1rem;
+  padding: 0.6rem 0 0.6rem 1rem;
+  border-left: 4px solid #3b82f6;
+  background: linear-gradient(90deg, #eff6ff 0%, transparent 100%);
+  border-radius: 0 8px 8px 0;
+}
+
+.blog-content h3 {
+  font-size: 1.15rem;
+  margin: 2rem 0 0.75rem;
+  color: #1d4ed8;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.blog-content h3::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3b82f6;
+  flex-shrink: 0;
+}
+
+.blog-content h4 {
+  font-size: 1.05rem;
+  margin: 1.75rem 0 0.5rem;
+  color: #1e40af;
+}
+
+/* ── Paragraphs ───────────────────────────────────────────── */
+
+.blog-content p {
+  margin: 0 0 1.35rem;
+}
+
+.blog-content > p:first-of-type {
+  font-size: 1.08rem;
+  color: #4b5563;
+  line-height: 1.9;
+}
+
+/* ── Links ────────────────────────────────────────────────── */
+
+.blog-content a {
+  color: #2563eb;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1.5px solid #bfdbfe;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.blog-content a:hover {
+  color: #1d4ed8;
+  border-color: #3b82f6;
+}
+
+/* ── Bold / Italic ────────────────────────────────────────── */
+
+.blog-content strong { color: #111827; font-weight: 700; }
+.blog-content em     { font-style: italic; color: #4b5563; }
+
+/* ── Lists ────────────────────────────────────────────────── */
+
+.blog-content ul,
+.blog-content ol {
+  margin: 0 0 1.35rem;
+  padding-left: 0;
+  list-style: none;
+}
+
+.blog-content ul li,
+.blog-content ol li {
+  position: relative;
+  padding: 0.2rem 0 0.2rem 1.6rem;
+  margin-bottom: 0.4rem;
+  color: #374151;
+}
+
+/* Custom bullet */
+.blog-content ul li::before {
+  content: '';
+  position: absolute;
+  left: 0.3rem;
+  top: 0.65rem;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3b82f6;
+}
+
+/* Numbered */
+.blog-content ol {
+  counter-reset: li-counter;
+}
+.blog-content ol li {
+  counter-increment: li-counter;
+}
+.blog-content ol li::before {
+  content: counter(li-counter);
+  position: absolute;
+  left: 0;
+  top: 0.15rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: #eff6ff;
+  border: 1.5px solid #bfdbfe;
+  color: #2563eb;
+  font-size: 0.7rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  text-align: center;
+}
+
+/* Nested lists */
+.blog-content li > ul,
+.blog-content li > ol {
+  margin-top: 0.5rem;
+  margin-bottom: 0;
+}
+
+/* ── Blockquote ───────────────────────────────────────────── */
+
+.blog-content blockquote {
+  margin: 2rem 0;
+  padding: 1rem 1.25rem 1rem 1.5rem;
+  border-left: 4px solid #60a5fa;
+  background: #eff6ff;
+  border-radius: 0 12px 12px 0;
+  color: #1e40af;
+  font-style: normal;
+}
+
+.blog-content blockquote p:last-child { margin-bottom: 0; }
+
+/* ── Inline code ──────────────────────────────────────────── */
+
+.blog-content code:not(pre code) {
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.85em;
+  font-weight: 600;
+  padding: 0.1em 0.45em 0.15em;
+  border-radius: 5px;
+  border: 1px solid #bfdbfe;
+  font-family: ui-monospace, 'Cascadia Code', Menlo, Monaco, Consolas, monospace;
+}
+
+/* ── Code block ───────────────────────────────────────────── */
+
+.blog-content pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 14px;
+  padding: 1.25rem 1.5rem;
+  overflow-x: auto;
+  margin: 2rem 0;
+  font-size: 0.875rem;
+  line-height: 1.75;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: ui-monospace, 'Cascadia Code', Menlo, Monaco, Consolas, monospace;
+}
+
+.blog-content pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  border: none;
+  font-size: inherit;
+  font-weight: 400;
+}
+
+/* ── HR ───────────────────────────────────────────────────── */
+
+.blog-content hr {
+  border: none;
+  margin: 2.5rem 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #d1d5db 30%, #d1d5db 70%, transparent);
+}
+
+/* ── Tables ───────────────────────────────────────────────── */
+
+.blog-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 2rem 0;
+  font-size: 0.9rem;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+  border: 1px solid #e5e7eb;
+}
+
+.blog-content thead tr {
+  background: #eff6ff;
+}
+
+.blog-content th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 800;
+  font-size: 0.75rem;
+  color: #1d4ed8;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 2px solid #bfdbfe;
+}
+
+.blog-content td {
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid #f3f4f6;
+  color: #374151;
+  vertical-align: top;
+}
+
+.blog-content tr:last-child td { border-bottom: none; }
+.blog-content tbody tr:hover td { background: #f9fafb; }
+
+/* ── Images ───────────────────────────────────────────────── */
+
+.blog-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 14px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.10);
+  margin: 2rem 0;
+  display: block;
+}
+
+/* ── Checklist ────────────────────────────────────────────── */
+
+.blog-content input[type="checkbox"] {
+  accent-color: #3b82f6;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+
+/* ── Responsive ───────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .blog-content h1 { font-size: 1.65rem; }
+  .blog-content h2 { font-size: 1.2rem; }
+  .blog-content h3 { font-size: 1.05rem; }
+  .blog-content pre { font-size: 0.78rem; padding: 1rem; border-radius: 10px; }
+  .blog-content table { font-size: 0.78rem; }
 }

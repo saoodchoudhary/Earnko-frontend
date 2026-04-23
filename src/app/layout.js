@@ -118,45 +118,27 @@ const organizationJsonLd = {
       '@type': 'Organization',
       '@id': `${SITE_URL}/#organization`,
       name: 'Earnko',
+      alternateName: ['Earnko Affiliate', 'Earnko India'],
       url: SITE_URL,
       logo: {
         '@type': 'ImageObject',
-        // Square logo used for Google Knowledge Graph / Organization schema
         url: `${SITE_URL}/images/earnko-logo.png`,
         width: 512,
         height: 512
       },
-      contactPoint: {
-        '@type': 'ContactPoint',
-        email: 'contact@earnko.com',
-        contactType: 'customer support',
-        areaServed: 'IN',
-        availableLanguage: ['English', 'Hindi']
-      },
-      description:
-        'Earnko is India\'s affiliate marketing platform where creators and influencers earn commissions and cashback by sharing product links from 500+ partner stores.',
-      foundingLocation: {
-        '@type': 'Place',
-        addressCountry: 'IN'
-      }
+   sameAs: [
+  'https://www.linkedin.com/in/earn-ko-65311b3a5/',
+  'https://www.instagram.com/earnko_official'
+]
     },
     {
       '@type': 'WebSite',
       '@id': `${SITE_URL}/#website`,
       url: SITE_URL,
       name: 'Earnko',
-      description:
-        'Earn money online in India by sharing affiliate links — commissions, cashback, UPI payouts.',
+      alternateName: 'Earnko',
       publisher: { '@id': `${SITE_URL}/#organization` },
-      inLanguage: 'en-IN',
-      potentialAction: {
-        '@type': 'SearchAction',
-        target: {
-          '@type': 'EntryPoint',
-          urlTemplate: `${SITE_URL}/stores?q={search_term_string}`
-        },
-        'query-input': 'required name=search_term_string'
-      }
+      inLanguage: 'en-IN'
     }
   ]
 };
