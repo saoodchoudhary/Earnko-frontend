@@ -374,11 +374,7 @@ export default function TrustBar() {
   /* Normalise raw Store docs → display shape */
   const brands = useMemo(() => rawStores.map(normaliseStore), [rawStores]);
 
-  /* Derive unique categories present in data */
-  const presentCategories = useMemo(() => {
-    const cats = new Set(brands.map(b => b.category));
-    return ['All', ...ALL_CATEGORIES.slice(1).filter(c => cats.has(c))];
-  }, [brands]);
+
 
   /* Filter by active category */
   const filtered = useMemo(() =>
@@ -466,55 +462,8 @@ export default function TrustBar() {
               </h2>
             </div>
 
-            {/* Live pill */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '0.5rem',
-              padding: '0.45rem 1rem',
-              background: 'var(--color-surface)',
-              border: '1px solid rgba(37,99,235,0.12)',
-              borderRadius: 'var(--radius-full)',
-              boxShadow: 'var(--shadow-sm)',
-            }}>
-              <span style={{
-                width: 8, height: 8, borderRadius: '50%',
-                background: '#059669',
-                boxShadow: '0 0 0 3px rgba(5,150,105,0.22)',
-                animation: 'dot-pulse 2s ease-in-out infinite',
-                flexShrink: 0,
-              }} />
-              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--color-text)' }}>
-                Live Commissions Active
-              </span>
-            </div>
           </div>
-
-          {/* ── Category filter pills ── */}
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.75rem' }}>
-            {presentCategories.map(cat => (
-              <button
-                key={cat}
-                onClick={() => setActiveCat(cat)}
-                type="button"
-                style={{
-                  padding: '0.32rem 0.9rem',
-                  borderRadius: 'var(--radius-full)',
-                  border: `1.5px solid ${activeCat === cat ? '#2563eb' : 'rgba(37,99,235,0.12)'}`,
-                  background: activeCat === cat
-                    ? 'linear-gradient(135deg,#2563eb,#1d4ed8)'
-                    : 'var(--color-surface)',
-                  color: activeCat === cat ? '#fff' : 'var(--color-muted,#6b7280)',
-                  fontSize: '0.7rem', fontWeight: 800,
-                  cursor: 'pointer',
-                  transition: 'all 240ms cubic-bezier(0.16,1,0.3,1)',
-                  boxShadow: activeCat === cat ? '0 4px 14px rgba(37,99,235,0.30)' : 'none',
-                  transform: activeCat === cat ? 'scale(1.04)' : 'scale(1)',
-                  outline: 'none',
-                }}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+ 
         </div>
 
         {/* ── Ticker rows ── */}
@@ -529,33 +478,6 @@ export default function TrustBar() {
           onBrandClick={setSelectedBrand} loading={loading}
         />
 
-        {/* ── Bottom trust strip ── */}
-        <div className="site-container">
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            gap: '0.5rem', marginTop: '1.75rem', flexWrap: 'wrap',
-          }}>
-            {[
-              { dot: '#059669', text: 'Commissions verified by network' },
-              { dot: '#2563eb', text: 'Real-time tracking on all brands' },
-              { dot: '#7c3aed', text: '₹2.4Cr+ paid out this year'       },
-            ].map(p => (
-              <span key={p.text} style={{
-                display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
-                padding: '0.3rem 0.85rem',
-                borderRadius: 'var(--radius-full)',
-                background: 'var(--color-surface)',
-                border: '1px solid rgba(37,99,235,0.09)',
-                fontSize: '0.68rem', fontWeight: 700,
-                color: 'var(--color-muted,#6b7280)',
-                boxShadow: 'var(--shadow-sm)',
-              }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, flexShrink: 0 }} />
-                {p.text}
-              </span>
-            ))}
-          </div>
-        </div>
       </section>
 
       {/* ── Brand detail modal ── */}

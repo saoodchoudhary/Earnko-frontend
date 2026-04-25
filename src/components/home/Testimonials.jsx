@@ -105,12 +105,6 @@ const REVIEWS = [
   },
 ];
 
-const PLATFORM_STATS = [
-  { icon: <Users  className="w-4 h-4" />, value: '1.2L+',    label: 'Active Earners',  color: '#2563eb', bg: '#eff6ff' },
-  { icon: <Wallet className="w-4 h-4" />, value: '₹2.4Cr+',  label: 'Total Paid Out',  color: '#059669', bg: '#ecfdf5' },
-  { icon: <TrendingUp className="w-4 h-4" />, value: '85L+', label: 'Links Generated', color: '#7c3aed', bg: '#f5f3ff' },
-  { icon: <BadgeCheck className="w-4 h-4" />, value: '200+', label: 'Partner Brands',  color: '#0891b2', bg: '#ecfeff' },
-];
 
 /* ─────────────────────────────────────────
    STAR RATING
@@ -143,7 +137,6 @@ function TestimonialCard({ r, style = {} }) {
         boxShadow: hovered
           ? `var(--shadow-lg), 0 0 0 1px ${r.accentColor}18, ${r.glowColor} 0px 20px 48px`
           : 'var(--shadow-sm)',
-        transform: hovered ? 'translateY(-7px) scale(1.012)' : 'translateY(0) scale(1)',
         transition: 'all 380ms cubic-bezier(0.16,1,0.3,1)',
         cursor: 'default',
         flexShrink: 0,
@@ -290,6 +283,8 @@ function TickerRow({ items, reverse = false, speed = 48 }) {
         gap: '1.25rem',
         width: 'max-content',
         animation: `${reverse ? 'ticker-rtl' : 'ticker-ltr'} ${speed}s linear infinite`,
+        paddingBottom: "1.75rem",
+        paddingTop: "1.25rem",
       }}>
         {doubled.map((r, i) => (
           <TestimonialCard key={i} r={r} style={{ width: 340 }} />
@@ -299,51 +294,6 @@ function TickerRow({ items, reverse = false, speed = 48 }) {
   );
 }
 
-/* ─────────────────────────────────────────
-   PLATFORM STAT BAR
-───────────────────────────────────────── */
-function PlatformStatBar() {
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexWrap: 'wrap', gap: '0.5rem',
-      padding: '1rem 1.75rem',
-      background: 'var(--color-surface)',
-      border: '1px solid rgba(37,99,235,0.10)',
-      borderRadius: 'var(--radius-2xl)',
-      boxShadow: 'var(--shadow-md)',
-      marginBottom: '3rem',
-    }}>
-      {PLATFORM_STATS.map((s, i) => (
-        <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <div style={{
-              width: 34, height: 34, borderRadius: 9,
-              background: s.bg,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: s.color,
-            }}>
-              {s.icon}
-            </div>
-            <div>
-              <div style={{
-                fontFamily: 'var(--font-display)', fontWeight: 900,
-                fontSize: '0.95rem', color: 'var(--color-text)',
-                lineHeight: 1, fontVariantNumeric: 'tabular-nums',
-              }}>{s.value}</div>
-              <div style={{ fontSize: '0.62rem', color: 'var(--color-faint)', marginTop: 2, fontWeight: 700 }}>
-                {s.label}
-              </div>
-            </div>
-          </div>
-          {i < PLATFORM_STATS.length - 1 && (
-            <div style={{ width: 1, height: 30, background: 'rgba(37,99,235,0.10)', margin: '0 0.75rem' }} />
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 /* ─────────────────────────────────────────
    MAIN EXPORT
@@ -398,12 +348,10 @@ export default function Testimonials() {
             </p>
           </div>
 
-          {/* Platform stat bar */}
-          <PlatformStatBar />
         </div>
 
         {/* Ticker Row 1 — left to right */}
-        <div style={{ marginBottom: '1.25rem', paddingLeft: '1rem', paddingRight: '1rem' }}>
+        <div style={{paddingLeft: '1rem', paddingRight: '1rem' }}>
           <TickerRow items={ROW_A} reverse={false} speed={52} />
         </div>
 
@@ -412,31 +360,6 @@ export default function Testimonials() {
           <TickerRow items={ROW_B} reverse={true} speed={44} />
         </div>
 
-        {/* Bottom proof line */}
-        <div className="site-container">
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            gap: '0.65rem', marginTop: '2.75rem', flexWrap: 'wrap',
-          }}>
-            {[
-              { icon: <BadgeCheck style={{ width: 13, height: 13, color: '#059669' }} />, text: 'All reviews verified' },
-              { icon: <Star style={{ width: 12, height: 12 }} fill="#f59e0b" stroke="#f59e0b" />,   text: '4.9 / 5.0 average rating' },
-              { icon: <Users style={{ width: 13, height: 13, color: '#2563eb' }} />,                text: '1,20,000+ active earners' },
-            ].map(p => (
-              <span key={p.text} style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '0.32rem 0.9rem', borderRadius: 99,
-                background: 'var(--color-surface)',
-                border: '1px solid rgba(37,99,235,0.10)',
-                fontSize: '0.7rem', fontWeight: 700,
-                color: 'var(--color-muted)',
-                boxShadow: 'var(--shadow-sm)',
-              }}>
-                {p.icon} {p.text}
-              </span>
-            ))}
-          </div>
-        </div>
       </section>
     </>
   );

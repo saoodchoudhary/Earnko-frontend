@@ -10,13 +10,6 @@ const STATS = [
   { emoji:'🏪', bg:'#f0f9ff', value:'200+',    label:'Partner Stores',  trend:'+12%' },
 ];
 
-const TRUST_CHIPS = [
-  { icon:<BadgeCheck className="w-3.5 h-3.5 text-blue-600"/>, label:'Free to join' },
-  { icon:<Zap className="w-3.5 h-3.5 text-amber-500"/>,       label:'Instant payouts' },
-  { icon:<Users className="w-3.5 h-3.5 text-emerald-600"/>,   label:'1.2 Lakh+ earners' },
-  { icon:<BadgeCheck className="w-3.5 h-3.5 text-blue-600"/>, label:'Verified commissions' },
-];
-
 export default function Hero() {
   return (
     <section className="hero-section">
@@ -52,13 +45,6 @@ export default function Hero() {
               </Link>
             </div>
 
-            <div className="hero-trust-strip">
-              {TRUST_CHIPS.map(t => (
-                <span key={t.label} className="trust-chip">
-                  {t.icon} {t.label}
-                </span>
-              ))}
-            </div>
           </div>
 
           {/* Dashboard visual */}

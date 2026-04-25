@@ -59,7 +59,7 @@ export default function HomePage() {
   return (
     <>
       <Navbar />
-      <div className="mt-[80px] md:mt-0">
+      <div className="mt-16 md:mt-0">
         {isLoggedIn ? (
           <div className="mb-18 md:mb-0">
             <HomeLoggedIn />
