@@ -5,11 +5,11 @@ import '../../styles/earnko-home.css';
 
 import FinalCTA        from './FinalCTA';
 import Features        from './Features';
-import Hero            from './Hero';
 import HowItWorks      from './HowItWorks';
-import ProductsSection from './ProductsSection';
 import Testimonials    from './Testimonials';
 import TrustBar        from './TrustBar';
+import Hero            from './Hero';  // ← HeroWrapper ki jagah Hero directly
+import ProductCarousel from './ProductCarousel';
 
 function safeJson(res) {
   const ct = res.headers.get('content-type') || '';
@@ -19,8 +19,10 @@ function safeJson(res) {
 
 export default function HomeMarketing() {
   const base = process.env.NEXT_PUBLIC_BACKEND_URL || '';
-  const [stores, setStores] = useState([]);
+  const [stores, setStores]   = useState([]);
+  const [stats,  setStats]    = useState(null);   // ← stats state add karo
 
+  // Stores fetch
   useEffect(() => {
     if (!base) return;
     const ctrl = new AbortController();
@@ -37,12 +39,32 @@ export default function HomeMarketing() {
     return () => ctrl.abort();
   }, [base]);
 
+  // Stats fetch — client side (5 min cache via browser)
+  useEffect(() => {
+    if (!base) return;
+    fetch(`${base}/api/stats/public`, {
+      headers: { 'Content-Type': 'application/json' },
+    })
+      .then(r => safeJson(r))
+      .then(js => {
+        if (!js?.success || !js?.data) return;
+        const d = js.data;
+        setStats([
+          { key: 'payout', value: d.payout,  trend: d.payoutTrend },
+          { key: 'users',  value: d.users,   trend: d.usersTrend  },
+          { key: 'links',  value: d.links,   trend: d.linksTrend  },
+          { key: 'stores', value: d.stores,  trend: d.storesTrend },
+        ]);
+      })
+      .catch(() => {});
+  }, [base]);
+
   return (
     <div className="home-wrapper">
-      <Hero />
+      <Hero stats={stats} />  {/* ← stats pass karo, null pe fallback auto */}
       <TrustBar />
       <HowItWorks />
-      <ProductsSection base={base} stores={stores} />
+      <ProductCarousel />
       {/* <Features /> */}
       <Testimonials />
       {/* <FinalCTA /> */}

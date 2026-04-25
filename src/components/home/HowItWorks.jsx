@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import React , { useEffect, useRef, useState, useCallback } from 'react';
 import { Gift, Link2, Share2, Wallet, ArrowRight, CheckCircle2 } from 'lucide-react';
 
 /* ─────────────────────────────────────────
@@ -477,14 +477,14 @@ function DesktopStepsRow({ inView }) {
   return (
     <div className="hiw-steps-row" style={{ marginBottom: 'clamp(1.75rem,4vw,2.75rem)' }}>
       {STEPS.map((step, i) => (
-        <>
+        <React.Fragment key={step.num}>
           <StepCard key={step.num} step={step} index={i} sectionVisible={inView} />
           {i < STEPS.length - 1 && (
             <div key={`arrow-${i}`} className="hiw-arrow-col" style={{ padding: '0 0.4rem' }}>
               <Arrow color={step.accentMid} inView={inView} delay={i * 110 + 180} />
             </div>
           )}
-        </>
+        </React.Fragment>
       ))}
     </div>
   );
