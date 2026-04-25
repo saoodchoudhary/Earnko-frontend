@@ -2,8 +2,16 @@ import './globals.css';
 import { Providers } from '../context/Providers';
 import { Toaster } from 'react-hot-toast';
 import Analytics from '@/components/Analytics';
+import { Poppins } from 'next/font/google';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.earnko.com';
+
+const poppins = Poppins({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700', '800'],
+  display: 'swap',
+  variable: '--font-poppins',
+});
 
 export const metadata = {
   metadataBase: new URL(SITE_URL),
@@ -47,7 +55,6 @@ export const metadata = {
     canonical: '/'
   },
 
-  // Favicons and icons
   icons: {
     icon: [
       { url: '/favicon.ico' },
@@ -126,10 +133,10 @@ const organizationJsonLd = {
         width: 512,
         height: 512
       },
-   sameAs: [
-  'https://www.linkedin.com/in/earn-ko-65311b3a5/',
-  'https://www.instagram.com/earnko_official'
-]
+      sameAs: [
+        'https://www.linkedin.com/in/earn-ko-65311b3a5/',
+        'https://www.instagram.com/earnko_official'
+      ]
     },
     {
       '@type': 'WebSite',
@@ -145,15 +152,17 @@ const organizationJsonLd = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" className={poppins.variable}>
       <head>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
       </head>
-      <body>
-        <Analytics/>
+
+      {/* ✅ Apply Poppins to entire site */}
+      <body className={`${poppins.className} antialiased`}>
+        <Analytics />
         <Providers>
           {children}
           <Toaster position="top-right" />

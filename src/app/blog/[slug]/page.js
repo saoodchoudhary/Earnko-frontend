@@ -6,36 +6,53 @@ import {
   getAllPostsMeta,
   getPostBySlug,
   getRecentPosts,
-  getRelatedPosts
+  getRelatedPosts,
 } from '@/lib/blog';
 import Footer from '@/components/Layout/Footer';
 import Navbar from '@/components/Layout/Navbar';
 
+// ✅ Sab interactive components alag file se import
+import {
+  Toc,
+  QuickLinks,
+  ShareButtons,
+  PostLinksList,
+  PrevNextNav,
+  RelatedPostsGrid,
+} from './BlogSidebars';
+
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.earnko.com';
 
+/* ─── Static params ──────────────────────────────────────── */
 export function generateStaticParams() {
-  const posts = getAllPostsMeta();
-  return posts.map((p) => ({ slug: p.slug }));
+  return getAllPostsMeta().map((p) => ({ slug: p.slug }));
 }
 
+/* ─── Metadata (SEO first priority) ─────────────────────── */
 export async function generateMetadata({ params }) {
   const { slug } = await params;
   const post = getPostBySlug(slug);
   if (!post) return {};
 
   const url = `${SITE_URL}/blog/${post.meta.slug}`;
-  const images = post.meta.coverImage ? [{ url: post.meta.coverImage }] : [];
+  const images = post.meta.coverImage
+    ? [{ url: post.meta.coverImage, width: 1200, height: 630 }]
+    : [];
 
   return {
     title: `${post.meta.title} | Earnko Blog`,
     description: post.meta.excerpt || '',
     alternates: { canonical: url },
+    robots: { index: true, follow: true, googleBot: { index: true, follow: true } },
     openGraph: {
       title: post.meta.title,
       description: post.meta.excerpt || '',
       url,
       type: 'article',
       images,
+      publishedTime: post.meta.date,
+      authors: [post.meta.author || 'Earnko'],
+      tags: post.meta.tags || [],
     },
     twitter: {
       card: post.meta.coverImage ? 'summary_large_image' : 'summary',
@@ -46,8 +63,7 @@ export async function generateMetadata({ params }) {
   };
 }
 
-/* ─── Helpers ─────────────────────────────────────────────── */
-
+/* ─── Helpers (pure, no client code) ────────────────────── */
 function formatDate(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -61,13 +77,9 @@ function estimateReadTime(text) {
 }
 
 function slugifyHeading(s) {
-  return String(s || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[`~!@#$%^&*()_+={}\[\]|\\:;"'<>,.?/]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
+  return String(s || '').trim().toLowerCase()
+    .replace(/[`~!@#$%^&*()_+={}[\]|\\:;"'<>,.?/]/g, '')
+    .replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
 }
 
 function extractToc(mdx) {
@@ -84,107 +96,34 @@ function extractToc(mdx) {
   return items.slice(0, 24);
 }
 
-const TAG_COLORS = {
-  affiliate: 'bg-blue-50 text-blue-700 ring-blue-200',
-  tracking: 'bg-violet-50 text-violet-700 ring-violet-200',
-  seo: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  analytics: 'bg-amber-50 text-amber-700 ring-amber-200',
-  earning: 'bg-rose-50 text-rose-700 ring-rose-200',
+/* ─── Tag Badge (server safe — no handlers) ──────────────── */
+const TAG_STYLES = {
+  affiliate: { bg: '#dbeafe', color: '#1e40af', ring: '#93c5fd' },
+  tracking:  { bg: '#ede9fe', color: '#5b21b6', ring: '#c4b5fd' },
+  seo:       { bg: '#d1fae5', color: '#065f46', ring: '#6ee7b7' },
+  analytics: { bg: '#fef3c7', color: '#92400e', ring: '#fcd34d' },
+  earning:   { bg: '#ffe4e6', color: '#9f1239', ring: '#fda4af' },
+  strategy:  { bg: '#f0f9ff', color: '#0c4a6e', ring: '#7dd3fc' },
+  trending:  { bg: '#fdf4ff', color: '#6b21a8', ring: '#d8b4fe' },
 };
 
-function TagBadge({ tag }) {
-  const cls = TAG_COLORS[tag?.toLowerCase()] || 'bg-gray-100 text-gray-600 ring-gray-200';
+function TagBadge({ tag, large = false }) {
+  const s = TAG_STYLES[tag?.toLowerCase()] || { bg: '#f3f4f6', color: '#374151', ring: '#d1d5db' };
   return (
-    <span className={`inline-flex items-center text-[11px] font-semibold px-2.5 py-1 rounded-full ring-1 ${cls}`}>
+    <span
+      className={`inline-flex items-center font-bold rounded-full ${large ? 'text-xs px-3 py-1' : 'text-[10px] px-2.5 py-0.5'}`}
+      style={{ background: s.bg, color: s.color, boxShadow: `0 0 0 1px ${s.ring}` }}
+    >
       {tag}
     </span>
   );
 }
 
-function JsonLd({ data }) {
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
-    />
-  );
-}
-
-/* ─── TOC ─────────────────────────────────────────────────── */
-
-function Toc({ items }) {
-  if (!items?.length) return null;
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
-        <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h10M4 14h16M4 18h10" />
-        </svg>
-        <span className="text-xs font-bold text-gray-700 tracking-wide uppercase">On this page</span>
-      </div>
-      <nav className="p-4 space-y-1">
-        {items.map((it) => (
-          <a
-            key={it.id}
-            href={`#${it.id}`}
-            className={`flex items-start gap-2 py-1 text-sm rounded-lg px-2 hover:bg-blue-50 hover:text-blue-700 transition-colors group ${
-              it.level === 3 ? 'pl-6 text-gray-500 text-xs' : 'text-gray-700 font-medium'
-            }`}
-          >
-            <span className={`mt-1.5 w-1 h-1 rounded-full flex-shrink-0 ${it.level === 2 ? 'bg-blue-400 group-hover:bg-blue-600' : 'bg-gray-300 group-hover:bg-blue-400'}`} />
-            {it.title}
-          </a>
-        ))}
-      </nav>
-    </div>
-  );
-}
-
-/* ─── Sidebar card ────────────────────────────────────────── */
-
-function SideCard({ title, icon, children }) {
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
-        {icon}
-        <span className="text-xs font-bold text-gray-700 tracking-wide uppercase">{title}</span>
-      </div>
-      <div className="p-4">{children}</div>
-    </div>
-  );
-}
-
-/* ─── Post links list ─────────────────────────────────────── */
-
-function PostLinksList({ items }) {
-  if (!items?.length) return <div className="text-sm text-gray-400 py-1">No articles yet.</div>;
-  return (
-    <div className="space-y-3">
-      {items.map((p) => (
-        <Link key={p.slug} href={`/blog/${p.slug}`} className="flex gap-3 group">
-          {p.coverImage && (
-            <div className="relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100">
-              <Image src={p.coverImage} alt={p.title} fill className="object-cover" sizes="56px" />
-            </div>
-          )}
-          <div className="min-w-0 flex-1">
-            <div className="text-[11px] text-gray-400 mb-0.5">{p.date ? new Date(p.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</div>
-            <div className="text-sm font-semibold text-gray-800 group-hover:text-blue-600 transition-colors line-clamp-2 leading-snug">
-              {p.title}
-            </div>
-          </div>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-/* ─── Reading progress ────────────────────────────────────── */
-
+/* ─── Reading progress (inline script — server safe) ─────── */
 function ReadingProgressBar() {
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-gray-200/60">
-      <div id="reading-bar" className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-none" style={{ width: '0%' }} />
+    <div className="fixed top-0 left-0 right-0 z-[60] h-[3px]" style={{ background: 'rgba(0,0,0,0.08)' }}>
+      <div id="reading-bar" className="h-full transition-none" style={{ width: '0%', background: 'linear-gradient(90deg,#2563eb,#06b6d4,#8b5cf6)' }} />
       <script
         dangerouslySetInnerHTML={{
           __html: `(function(){var b=document.getElementById('reading-bar');if(!b)return;window.addEventListener('scroll',function(){var e=document.documentElement,s=e.scrollTop,t=e.scrollHeight-e.clientHeight;b.style.width=t>0?Math.round(s/t*100)+'%':'0%';},{passive:true});})();`,
@@ -194,223 +133,243 @@ function ReadingProgressBar() {
   );
 }
 
-/* ─── Page ────────────────────────────────────────────────── */
+/* ─── JSON-LD ─────────────────────────────────────────────── */
+function JsonLd({ data }) {
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />;
+}
 
+/* ─── Sidebar card (server safe — no handlers) ───────────── */
+function SideCard({ title, icon, children }) {
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: '1px solid #e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+      <div className="px-4 py-3 flex items-center gap-2 border-b border-gray-100" style={{ background: 'linear-gradient(135deg,#f9fafb,#f3f4f6)' }}>
+        <span className="text-blue-500">{icon}</span>
+        <span className="text-xs font-black text-gray-600 tracking-wider uppercase">{title}</span>
+      </div>
+      <div className="p-4">{children}</div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PAGE
+═══════════════════════════════════════════════════════════ */
 export default async function BlogPostPage({ params }) {
   const { slug } = await params;
   const post = getPostBySlug(slug);
   if (!post) return notFound();
 
   const canonicalUrl = `${SITE_URL}/blog/${post.meta.slug}`;
-  const readTime = estimateReadTime(post.content);
-  const tocItems = extractToc(post.content);
-  const recent = getRecentPosts({ limit: 5, excludeSlug: post.meta.slug });
-  const related = getRelatedPosts({ post, limit: 4 });
+  const readTime    = estimateReadTime(post.content);
+  const tocItems    = extractToc(post.content);
+  const recent      = getRecentPosts({ limit: 5, excludeSlug: post.meta.slug });
+  const related     = getRelatedPosts({ post, limit: 4 });
 
+  // SEO: JSON-LD BlogPosting schema
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'BlogPosting',
-    headline: post.meta.title,
-    description: post.meta.excerpt || '',
-    url: canonicalUrl,
+    headline:      post.meta.title,
+    description:   post.meta.excerpt || '',
+    url:           canonicalUrl,
     datePublished: post.meta.date || undefined,
-    dateModified: post.meta.date || undefined,
-    author: { '@type': 'Organization', name: post.meta.author || 'Earnko' },
+    dateModified:  post.meta.date || undefined,
+    author:        { '@type': 'Organization', name: post.meta.author || 'Earnko', url: SITE_URL },
     publisher: {
       '@type': 'Organization',
       name: 'Earnko',
+      url:  SITE_URL,
       logo: { '@type': 'ImageObject', url: `${SITE_URL}/logo.png` },
     },
     mainEntityOfPage: { '@type': 'WebPage', '@id': canonicalUrl },
+    keywords:  (post.meta.tags || []).join(', '),
+    inLanguage: 'en-IN',
     ...(post.meta.coverImage ? { image: `${SITE_URL}${post.meta.coverImage}` } : {}),
+  };
+
+  // Breadcrumb schema
+  const breadcrumbLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: SITE_URL },
+      { '@type': 'ListItem', position: 2, name: 'Blog', item: `${SITE_URL}/blog` },
+      { '@type': 'ListItem', position: 3, name: post.meta.title, item: canonicalUrl },
+    ],
   };
 
   return (
     <>
-      <Navbar/>
+      <Navbar />
       <JsonLd data={jsonLd} />
+      <JsonLd data={breadcrumbLd} />
       <ReadingProgressBar />
-      <div className="min-h-screen mt-[80px] bg-[#f8f9fc]">
 
-        {/* ── Hero ─────────────────────────────────────────── */}
-        <section className="relative overflow-hidden bg-gradient-to-br from-blue-700 via-blue-600 to-cyan-500 min-h-[340px] md:min-h-[380px]">
-       
-          {/* Mesh overlay */}
-          <div className="absolute inset-0">
-            <div className="absolute top-0 right-1/4 w-80 h-80 bg-white/10 rounded-full blur-3xl" />
-            <div className="absolute bottom-0 left-1/3 w-96 h-96 bg-cyan-300/10 rounded-full blur-3xl" />
+      <div className="min-h-screen bg-[#f6f7fb]" style={{ marginTop: '62px' }}>
+
+        {/* ══ HERO ══════════════════════════════════════════════ */}
+        <section
+          className="relative overflow-hidden"
+          style={{ background: 'linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 45%,#0891b2 100%)', minHeight: '360px' }}
+        >
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            <div className="absolute -top-20 -right-16 w-[500px] h-[500px] rounded-full opacity-[0.07]" style={{ background: 'radial-gradient(circle,#93c5fd,transparent)' }} />
+            <div className="absolute bottom-0 left-1/4 w-96 h-96 rounded-full opacity-[0.06]" style={{ background: 'radial-gradient(circle,#67e8f9,transparent)' }} />
           </div>
-          <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.07) 1px, transparent 0)', backgroundSize: '28px 28px' }} />
+          <div className="absolute inset-0 opacity-[0.08]" style={{ backgroundImage: 'radial-gradient(circle,rgba(255,255,255,0.8) 1px,transparent 1px)', backgroundSize: '26px 26px' }} />
 
-          <div className="relative container mx-auto px-4 py-12 md:py-16">
-            {/* Breadcrumb */}
+          <div className="relative container mx-auto px-5 py-12 md:py-16">
+            {/* Breadcrumb — SEO + visual */}
             <nav className="flex items-center gap-1.5 text-xs text-blue-200 mb-6 flex-wrap" aria-label="breadcrumb">
-              <Link href="/" className="hover:text-white transition-colors">Home</Link>
-              <svg className="w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
-              <Link href="/blog" className="hover:text-white transition-colors">Blog</Link>
-              <svg className="w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
-              <span className="text-white/60 line-clamp-1 max-w-[200px]">{post.meta.title}</span>
+              <Link href="/" className="hover:text-white transition-colors font-medium">Home</Link>
+              <svg className="w-3 h-3 flex-shrink-0 opacity-50" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
+              <Link href="/blog" className="hover:text-white transition-colors font-medium">Blog</Link>
+              <svg className="w-3 h-3 flex-shrink-0 opacity-50" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
+              <span className="text-white/50 line-clamp-1 max-w-[200px]">{post.meta.title}</span>
             </nav>
 
             {/* Tags */}
             {Array.isArray(post.meta.tags) && post.meta.tags.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-4">
+              <div className="flex flex-wrap gap-2 mb-5">
                 {post.meta.tags.slice(0, 5).map((t) => (
-                  <span key={t} className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-white/15 ring-1 ring-white/20 text-white tracking-wide">
+                  <span key={t} className="text-[10px] font-black px-3 py-1 rounded-full tracking-wider uppercase" style={{ background: 'rgba(255,255,255,0.13)', color: '#e0f2fe', boxShadow: '0 0 0 1px rgba(255,255,255,0.18)' }}>
                     {t}
                   </span>
                 ))}
               </div>
             )}
 
-            <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-white leading-[1.1] tracking-tight max-w-3xl">
+            {/* H1 — SEO most important */}
+            <h1 className="font-black text-white leading-[1.1] tracking-tight max-w-3xl" style={{ fontSize: 'clamp(1.65rem,4vw,2.75rem)' }}>
               {post.meta.title}
             </h1>
 
             {post.meta.excerpt && (
-              <p className="mt-4 text-blue-100 text-base md:text-lg max-w-2xl leading-relaxed">
+              <p className="mt-4 max-w-2xl leading-relaxed" style={{ color: '#bfdbfe', fontSize: 'clamp(0.95rem,1.5vw,1.1rem)' }}>
                 {post.meta.excerpt}
               </p>
             )}
 
             {/* Meta pills */}
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 ring-1 ring-white/20">
-                <div className="w-5 h-5 rounded-full bg-white/30 flex items-center justify-center text-white text-[10px] font-bold">
+            <div className="mt-8 flex flex-wrap items-center gap-2.5">
+              <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.13)', boxShadow: '0 0 0 1px rgba(255,255,255,0.18)' }}>
+                <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-black" style={{ background: 'rgba(255,255,255,0.25)' }}>
                   {(post.meta.author || 'E').slice(0, 1).toUpperCase()}
                 </div>
                 <span className="text-xs font-semibold text-white">{post.meta.author || 'Earnko'}</span>
               </div>
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/15 ring-1 ring-white/20">
-                <svg className="w-3.5 h-3.5 text-blue-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+              <div className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.13)', boxShadow: '0 0 0 1px rgba(255,255,255,0.18)' }}>
+                <svg className="w-3.5 h-3.5" style={{ color: '#93c5fd' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                 <span className="text-xs font-semibold text-white">{formatDate(post.meta.date)}</span>
               </div>
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/15 ring-1 ring-white/20">
-                <svg className="w-3.5 h-3.5 text-blue-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <div className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.13)', boxShadow: '0 0 0 1px rgba(255,255,255,0.18)' }}>
+                <svg className="w-3.5 h-3.5" style={{ color: '#93c5fd' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 <span className="text-xs font-semibold text-white">{readTime}</span>
               </div>
             </div>
           </div>
         </section>
 
-        {/* ── Cover image strip below hero (prominent display) ── */}
+        {/* ══ COVER IMAGE ════════════════════════════════════════ */}
         {post.meta.coverImage && (
-          <div className="container mx-auto px-4">
-            <div className="relative -mt-10 rounded-2xl overflow-hidden shadow-xl border border-white h-56 md:h-72 lg:h-[480px] max-w-4xl mx-auto">
+          <div className="max-w-[1280px] mx-auto px-5">
+            <div
+              className="relative -mt-10 rounded-2xl overflow-hidden mx-auto"
+              style={{ maxWidth: '820px', height: 'clamp(180px,35vw,420px)', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', border: '3px solid #fff' }}
+            >
               <Image
                 src={post.meta.coverImage}
                 alt={post.meta.title}
                 fill
-                className="object-fit"
+                className="object-cover"
                 priority
-                sizes="(max-width: 1024px) 100vw, 896px"
+                sizes="(max-width:1024px) 100vw, 820px"
               />
             </div>
           </div>
         )}
 
-        {/* ── Main 3-col grid ──────────────────────────────── */}
-        <div className={`container mx-auto px-4 ${post.meta.coverImage ? 'py-8' : 'py-10'}`}>
+        {/* ══ 3-COLUMN GRID ══════════════════════════════════════ */}
+        <div className="container mx-auto px-5" style={{ paddingTop: post.meta.coverImage ? '2.5rem' : '3rem', paddingBottom: '4rem' }}>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
-            {/* Left sidebar */}
+            {/* LEFT SIDEBAR */}
             <aside className="lg:col-span-3 order-2 lg:order-1">
               <div className="sticky top-20 space-y-5">
+                {/* ✅ Client Components — handlers work here */}
                 <Toc items={tocItems} />
-                <SideCard
-                  title="Quick links"
-                  icon={<svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>}
-                >
-                  <div className="space-y-1">
-                    {[
-                      { href: '/stores', label: '🏪 Browse Stores' },
-                      { href: '/dashboard/affiliate', label: '🔗 Generate Affiliate Link' },
-                      { href: '/contact', label: '💬 Contact Support' },
-                      { href: '/blog', label: '📰 Back to Blog' },
-                    ].map(({ href, label }) => (
-                      <Link key={href} href={href} className="flex items-center justify-between text-sm text-blue-600 hover:text-blue-800 font-semibold py-1.5 border-b border-gray-100 last:border-0 group">
-                        <span>{label}</span>
-                        <svg className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
-                      </Link>
-                    ))}
-                  </div>
-                </SideCard>
+                <QuickLinks />
+                <div className="hidden lg:block">
+                  <ShareButtons url={canonicalUrl} title={post.meta.title} />
+                </div>
               </div>
             </aside>
 
-            {/* Article */}
-            <main className="lg:col-span-6 order-1 lg:order-2">
-              <article className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="h-1 bg-gradient-to-r from-blue-500 via-cyan-400 to-blue-600" />
+            {/* MAIN ARTICLE */}
+            <main className="lg:col-span-6 order-1 lg:order-2 min-w-0">
+              <article className="bg-white rounded-3xl overflow-hidden" style={{ border: '1px solid #e5e7eb', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                <div className="h-1" style={{ background: 'linear-gradient(90deg,#2563eb,#06b6d4,#8b5cf6)' }} />
 
                 <div className="p-6 md:p-10">
-                  {/* MDX content — styled via .blog-content in globals.css */}
+                  {/* MDX — Server rendered for SEO */}
                   <div className="blog-content">
                     <MDXRemote source={post.content} />
                   </div>
 
                   {/* Tags footer */}
                   {Array.isArray(post.meta.tags) && post.meta.tags.length > 0 && (
-                    <div className="mt-10 pt-6 border-t border-gray-100">
-                      <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Tags</div>
+                    <div className="mt-10 pt-6" style={{ borderTop: '1px solid #f3f4f6' }}>
+                      <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Tagged Under</div>
                       <div className="flex flex-wrap gap-2">
-                        {post.meta.tags.map((t) => <TagBadge key={t} tag={t} />)}
+                        {post.meta.tags.map((t) => <TagBadge key={t} tag={t} large />)}
                       </div>
                     </div>
                   )}
 
-                  {/* Author bar */}
-                  <div className="mt-8 p-5 rounded-2xl bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  {/* Author card */}
+                  <div className="mt-8 p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4" style={{ background: 'linear-gradient(135deg,#eff6ff,#f0f9ff)', border: '1px solid #bfdbfe' }}>
                     <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-white font-extrabold text-lg flex-shrink-0">
+                      <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-xl flex-shrink-0" style={{ background: 'linear-gradient(135deg,#2563eb,#06b6d4)' }}>
                         {(post.meta.author || 'E').slice(0, 1).toUpperCase()}
                       </div>
                       <div>
-                        <div className="text-xs text-gray-500 mb-0.5">Written by</div>
-                        <div className="font-extrabold text-gray-900">{post.meta.author || 'Earnko'}</div>
+                        <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5 font-bold">Written by</div>
+                        <div className="font-black text-gray-900 text-sm">{post.meta.author || 'Earnko'}</div>
                         <div className="text-xs text-gray-500 mt-0.5">Affiliate marketing + link tracking guides by Earnko team.</div>
                       </div>
                     </div>
-                    <Link href="/dashboard/affiliate" className="flex-shrink-0 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white text-sm font-bold hover:shadow-lg hover:shadow-blue-200 transition">
+                    <Link href="/dashboard/affiliate" className="flex-shrink-0 px-5 py-2.5 rounded-xl text-white text-xs font-extrabold transition-all hover:opacity-90" style={{ background: 'linear-gradient(135deg,#2563eb,#0891b2)', boxShadow: '0 4px 14px rgba(37,99,235,0.3)' }}>
                       Create a Link →
                     </Link>
                   </div>
                 </div>
               </article>
 
-              {/* Prev / Next */}
-              {recent.length > 0 && (
-                <div className="mt-6 grid grid-cols-2 gap-4">
-                  <Link href={`/blog/${recent[0]?.slug}`} className="group flex flex-col p-5 bg-white rounded-2xl border border-gray-100 hover:shadow-md hover:border-blue-200 transition">
-                    <span className="text-xs text-gray-400 mb-1">← Previous</span>
-                    <span className="text-sm font-bold text-gray-800 group-hover:text-blue-600 transition-colors line-clamp-2">{recent[0]?.title}</span>
-                  </Link>
-                  {recent[1] && (
-                    <Link href={`/blog/${recent[1]?.slug}`} className="group flex flex-col p-5 bg-white rounded-2xl border border-gray-100 hover:shadow-md hover:border-blue-200 transition text-right">
-                      <span className="text-xs text-gray-400 mb-1">Next →</span>
-                      <span className="text-sm font-bold text-gray-800 group-hover:text-blue-600 transition-colors line-clamp-2">{recent[1]?.title}</span>
-                    </Link>
-                  )}
-                </div>
-              )}
+              {/* Mobile share */}
+              <div className="mt-5 lg:hidden">
+                <ShareButtons url={canonicalUrl} title={post.meta.title} />
+              </div>
+
+              {/* Prev / Next — Client Component */}
+              <PrevNextNav recent={recent} />
             </main>
 
-            {/* Right sidebar */}
-<aside className="lg:col-span-3 order-3">
-  <div className="lg:sticky lg:top-24 self-start space-y-5">
+            {/* RIGHT SIDEBAR */}
+            <aside className="lg:col-span-3 order-3">
+              <div className="lg:sticky lg:top-20 space-y-5">
+
                 {/* Author */}
-                <SideCard
-                  title="Author"
-                  icon={<svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>}
-                >
+                <SideCard title="Author" icon={
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                }>
                   <div className="flex items-start gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-white font-extrabold text-base flex-shrink-0">
+                    <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-black text-lg flex-shrink-0" style={{ background: 'linear-gradient(135deg,#2563eb,#06b6d4)' }}>
                       {(post.meta.author || 'E').slice(0, 1).toUpperCase()}
                     </div>
                     <div className="min-w-0">
-                      <div className="font-extrabold text-gray-900 text-sm">{post.meta.author || 'Earnko'}</div>
-                      <div className="text-xs text-gray-500 mt-0.5 leading-relaxed">Tips and best practices for creators and affiliates.</div>
-                      <a href="mailto:contact@earnko.com" className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800">
+                      <div className="font-black text-gray-900 text-sm">{post.meta.author || 'Earnko'}</div>
+                      <div className="text-xs text-gray-500 mt-0.5 leading-relaxed">Affiliate marketing tips for creators and publishers.</div>
+                      <a href="mailto:contact@earnko.com" className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 transition-colors">
                         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" /><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" /></svg>
                         contact@earnko.com
                       </a>
@@ -419,38 +378,44 @@ export default async function BlogPostPage({ params }) {
                 </SideCard>
 
                 {/* CTA */}
-                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 p-5 text-white">
-                  <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-white/10" />
+                <div className="relative overflow-hidden rounded-2xl p-5 text-white" style={{ background: 'linear-gradient(135deg,#1e3a8a,#2563eb,#0891b2)' }}>
+                  <div className="absolute -top-8 -right-8 w-28 h-28 rounded-full opacity-10" style={{ background: 'radial-gradient(circle,#fff,transparent)' }} />
                   <div className="relative z-10">
-                    <div className="text-base font-extrabold">Ready to earn?</div>
-                    <p className="text-blue-100 text-xs mt-1 leading-relaxed">Generate affiliate links and track conversions in real-time.</p>
-                    <Link href="/dashboard/affiliate" className="mt-4 flex items-center justify-center gap-1 py-2 rounded-xl bg-white text-blue-600 text-xs font-extrabold hover:shadow-lg transition">
+                    <div className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full mb-3 tracking-wider" style={{ background: 'rgba(255,255,255,0.15)', boxShadow: '0 0 0 1px rgba(255,255,255,0.2)' }}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                      LIVE NOW
+                    </div>
+                    <div className="text-base font-black mb-1">Ready to earn?</div>
+                    <p className="text-blue-100 text-xs leading-relaxed mb-4">Generate affiliate links and track real-time conversions on Earnko.</p>
+                    <Link href="/dashboard/affiliate" className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-blue-700 text-xs font-extrabold transition-all hover:shadow-lg" style={{ background: '#fff' }}>
                       Generate Link →
                     </Link>
                   </div>
                 </div>
 
-                {/* Related */}
-                <SideCard
-                  title="Related articles"
-                  icon={<svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>}
-                >
+                {/* Related — Client Component */}
+                <SideCard title="Related articles" icon={
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                }>
                   <PostLinksList items={related} />
                 </SideCard>
 
-                {/* Recent */}
-                <SideCard
-                  title="Recent articles"
-                  icon={<svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
-                >
+                {/* Recent — Client Component */}
+                <SideCard title="Recent articles" icon={
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                }>
                   <PostLinksList items={recent} />
                 </SideCard>
               </div>
             </aside>
           </div>
+
+          {/* Related posts grid — Client Component */}
+          <RelatedPostsGrid related={related} />
         </div>
       </div>
-      <Footer/>
+
+      <Footer />
     </>
   );
 }
